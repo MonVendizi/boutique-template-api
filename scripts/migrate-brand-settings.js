@@ -69,6 +69,18 @@ const defaults = [
   // Newsletter home
   ["newsletter_section_title", "Rejoignez notre communauté", "text", "home", "Titre section newsletter"],
   ["newsletter_section_subtitle", "Recevez nos actualités et offres exclusives", "text", "home", "Sous-titre newsletter"],
+  ["brand_universe_title", "Explorez notre univers", "text", "home", "Titre section univers"],
+  [
+    "brand_universe_cards",
+    JSON.stringify([
+      { title: "Nos produits", description: "Découvrez notre sélection.", image: "", url: "/boutique", cta: "Voir la boutique" },
+      { title: "Notre blog", description: "Conseils et actualités.", image: "", url: "/blog", cta: "Lire le blog" },
+      { title: "Notre histoire", description: "Qui nous sommes.", image: "", url: "/a-propos", cta: "En savoir plus" },
+    ]),
+    "json",
+    "home",
+    "Cartes univers (3 cartes)",
+  ],
 
   // Footer
   ["footer_description", "Votre boutique artisanale en ligne.", "text", "footer", "Description footer"],

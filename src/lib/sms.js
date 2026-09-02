@@ -14,6 +14,8 @@ function normalizePhone(phone) {
   return String(phone || "").replace(/\s/g, "");
 }
 
+const brandName = process.env.BRAND_NAME || "Votre boutique";
+
 export async function sendSMS(message) {
   if (!process.env.BREVO_API_KEY || !process.env.ADMIN_PHONE) return;
 
@@ -22,7 +24,7 @@ export async function sendSMS(message) {
 
   try {
     await brevo.transactionalSms.sendTransacSms({
-      sender: "TinaLuxe",
+      sender: brandName.slice(0, 11),
       recipient: normalizePhone(process.env.ADMIN_PHONE),
       content: message,
       type: "transactional",

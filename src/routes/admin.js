@@ -810,7 +810,7 @@ export default async function adminRoutes(fastify) {
       .header("Content-Type", "text/csv; charset=utf-8")
       .header(
         "Content-Disposition",
-        `attachment; filename="tinaluxe-ventes-${fromDate}-${toDate}.csv"`
+        `attachment; filename="boutique-ventes-${fromDate}-${toDate}.csv"`
       )
       .send(bom + csv);
   });

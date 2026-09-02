@@ -34,7 +34,7 @@ import { getGoogleReviewUrl } from "./lib/settings.js";
 import { getReferralConfig } from "./routes/referrals.js";
 
 const PORT = Number(process.env.PORT) || 3001;
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://maboutique.fr";
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
@@ -60,21 +60,23 @@ fastify.addContentTypeParser(
   }
 );
 
+const allowedOrigins = [
+  FRONTEND_URL,
+  "http://localhost:3000",
+  "http://localhost:3001",
+];
+
 await fastify.register(cors, {
-  origin: [
-    FRONTEND_URL,
-    "http://localhost:3000",
-    "https://tinaluxe.fr",
-    "https://www.tinaluxe.fr",
-    "https://tinaluxe-web-five.vercel.app",
-    "https://tinaluxe-web.vercel.app",
-  ],
+  origin: allowedOrigins,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "x-admin-password"],
   credentials: true,
 });
 
-fastify.get("/health", async () => ({ status: "ok", service: "tinaluxe-api" }));
+fastify.get("/health", async () => ({
+  status: "ok",
+  service: "boutique-template-api",
+}));
 
 await fastify.register(productsRoutes);
 await fastify.register(checkoutRoutes);
@@ -326,7 +328,7 @@ async function processCrossSellEmails() {
     for (const order of rows) {
       const items = Array.isArray(order.items) ? order.items : [];
       const slugs = items.map((i) => i.slug || "").filter(Boolean);
-      const suggestions = getCrossSellSuggestions(slugs);
+      const suggestions = await getCrossSellSuggestions(slugs, pool);
 
       if (!suggestions.length) continue;
 
@@ -396,7 +398,7 @@ async function processReferralInviteEmails() {
 
 try {
   await fastify.listen({ port: PORT, host: "0.0.0.0" });
-  console.log(`TinaLuxe API → http://localhost:${PORT}`);
+  console.log(`Boutique API → http://localhost:${PORT}`);
 
   // Rappels tâches J-1 — toutes les heures
   void processCalendarReminders();

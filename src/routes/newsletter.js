@@ -5,6 +5,7 @@ import {
 } from "../lib/email.js";
 import { getLoyaltyConfig } from "./loyalty.js";
 
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://maboutique.fr";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ipAttempts = new Map();
 
@@ -122,7 +123,7 @@ export default async function newsletterRoutes(fastify) {
   fastify.get("/newsletter/unsubscribe", async (request, reply) => {
     const token = String(request.query?.token || "").trim();
     const emailParam = String(request.query?.email || "").trim();
-    const successUrl = "https://tinaluxe.fr/newsletter/unsubscribe?success=true";
+    const successUrl = `${FRONTEND_URL.replace(/\/$/, "")}/newsletter/unsubscribe?success=true`;
 
     try {
       if (emailParam) {

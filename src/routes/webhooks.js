@@ -10,6 +10,9 @@ import { applyAffiliateCommission } from "./affiliates.js";
 import { convertReferral } from "./referrals.js";
 import { sendSMS } from "../lib/sms.js";
 
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://maboutique.fr";
+const BRAND_NAME = process.env.BRAND_NAME || "Ma Boutique";
+
 async function fulfillOrderRecord({
   stripeSessionId,
   stripePaymentIntentId,
@@ -195,8 +198,9 @@ async function fulfillOrderRecord({
 
     try {
       const totalEuros = (order.total_cents / 100).toFixed(2);
+      const adminHost = FRONTEND_URL.replace(/^https?:\/\//, "").replace(/\/$/, "");
       await sendSMS(
-        `TinaLuxe : Nouvelle commande ! ${totalEuros}EUR - ${order.customer_name || order.customer_email}. Admin : tinaluxe.fr/admin`
+        `${BRAND_NAME} : Nouvelle commande ! ${totalEuros}EUR - ${order.customer_name || order.customer_email}. Admin : ${adminHost}/admin`
       );
     } catch (smsErr) {
       console.error("SMS nouvelle commande échoué:", smsErr);

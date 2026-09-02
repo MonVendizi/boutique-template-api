@@ -3,6 +3,9 @@ import pool from "../src/db/pool.js";
 
 dotenv.config();
 
+const TEST_EMAIL = process.env.TEST_EMAIL || "test@example.com";
+const BRAND_NAME = process.env.BRAND_NAME || "Ma Boutique";
+
 const {
   sendOrderDeliveredEmail,
   sendReviewReminderEmail,
@@ -22,16 +25,17 @@ const settingsResult = await pool.query(
 const googleReviewUrl = settingsResult.rows[0]?.value || null;
 
 console.log("Google Review URL:", googleReviewUrl || "(non configuré)");
+console.log(`Envoi des emails de test ${BRAND_NAME} → ${TEST_EMAIL}`);
 
 const tests = [
   {
     label: "J+2 livraison",
     run: () =>
       sendOrderDeliveredEmail({
-        email: "sebastien.fallet@outlook.com",
-        customerName: "Sébastien Fallet",
+        email: TEST_EMAIL,
+        customerName: "Client Test",
         orderId: "test-order-123",
-        productName: "Beurre de Karité Brut",
+        productName: "Produit Exemple",
         googleReviewUrl,
       }),
   },
@@ -39,8 +43,8 @@ const tests = [
     label: "J+7 relance",
     run: () =>
       sendReviewReminderEmail({
-        email: "sebastien.fallet@outlook.com",
-        customerName: "Sébastien Fallet",
+        email: TEST_EMAIL,
+        customerName: "Client Test",
         orderId: "test-order-123",
         googleReviewUrl,
       }),
@@ -49,8 +53,8 @@ const tests = [
     label: "Demande avis Google",
     run: () =>
       sendGoogleReviewRequestEmail({
-        email: "sebastien.fallet@outlook.com",
-        customerName: "Sébastien Fallet",
+        email: TEST_EMAIL,
+        customerName: "Client Test",
         googleReviewUrl,
       }),
   },
@@ -81,7 +85,7 @@ for (const test of tests) {
 
 console.log(`\nRésultat: ${sent}/3 emails envoyés`);
 if (sent === 3) {
-  console.log("✅ Vérifie ta boîte Outlook (sebastien.fallet@outlook.com)");
+  console.log(`✅ Vérifie la boîte ${TEST_EMAIL}`);
 } else {
   process.exitCode = 1;
 }

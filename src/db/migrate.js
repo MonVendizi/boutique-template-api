@@ -12,7 +12,7 @@ async function migrate() {
   const schemaPath = path.join(__dirname, "schema.sql");
   const sql = fs.readFileSync(schemaPath, "utf-8");
 
-  console.log("Exécution du schéma TinaLuxe…");
+  console.log("Exécution du schéma boutique…");
   await pool.query(sql);
   console.log("Migration terminée avec succès.");
   await pool.end();

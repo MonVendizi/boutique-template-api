@@ -2,6 +2,10 @@ import pool from "../db/pool.js";
 import { sendGoogleReviewRequestEmail } from "../lib/email.js";
 import { getGoogleReviewUrl } from "../lib/settings.js";
 
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://maboutique.fr";
+const BRAND_NAME = process.env.BRAND_NAME || "Ma Boutique";
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@maboutique.fr";
+
 function checkAdmin(request, reply) {
   const password = request.headers["x-admin-password"];
 
@@ -83,7 +87,7 @@ export default async function reviewsRoutes(fastify) {
       customer_name: order.customer_name,
       customer_email: order.customer_email,
       product_slug: first.slug || "",
-      product_name: first.name || "votre produit TinaLuxe",
+      product_name: first.name || `votre produit ${BRAND_NAME}`,
     };
   });
 

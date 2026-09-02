@@ -5,16 +5,21 @@ import {
   sendOrderShippedEmail,
 } from "../src/lib/email.js";
 
+const TEST_EMAIL = process.env.TEST_EMAIL || "test@example.com";
+const BRAND_NAME = process.env.BRAND_NAME || "Ma Boutique";
+
 const testOrder = {
-  email: "sebastien.fallet@outlook.com",
+  email: TEST_EMAIL,
   orderId: "TEST-001",
-  customerName: "Sébastien",
+  customerName: "Client Test",
   items: [
-    { name: "Beurre de Karité Brut", qty: 1, price: 14.99 },
-    { name: "Tina Thé Minceur", qty: 1, price: 39.99 },
+    { name: "Produit Exemple A", qty: 1, price: 19.9 },
+    { name: "Produit Exemple B", qty: 1, price: 29.9 },
   ],
-  total: 54.98,
+  total: 49.8,
 };
+
+console.log(`Envoi des emails de test pour ${BRAND_NAME} → ${TEST_EMAIL}`);
 
 console.log("Envoi email 1 - Confirmation...");
 await sendOrderConfirmationEmail({

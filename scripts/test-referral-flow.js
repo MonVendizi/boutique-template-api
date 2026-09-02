@@ -8,14 +8,11 @@ import {
   sendReferralRewardEmail,
 } from "../src/lib/email.js";
 
-// ========================================
-// CONFIGURE ICI TES 2 ADRESSES EMAIL
-// ========================================
-const MARRAINE_EMAIL = "sebastien.fallet@outlook.com";
-const MARRAINE_NAME = "Sébastien";
-const FILLEULE_EMAIL = "seb_fallet@yahoo.fr";
-const FILLEULE_NAME = "Seb Yahoo";
-// ========================================
+const TEST_EMAIL = process.env.TEST_EMAIL || "test@example.com";
+const MARRAINE_EMAIL = TEST_EMAIL;
+const MARRAINE_NAME = "Client Test";
+const FILLEULE_EMAIL = `filleule+${TEST_EMAIL.split("@")[0]}@${TEST_EMAIL.split("@")[1] || "example.com"}`;
+const FILLEULE_NAME = "Filleule Test";
 
 function normalizeReferralBase(name) {
   return (
@@ -24,17 +21,15 @@ function normalizeReferralBase(name) {
       ?.toLowerCase()
       ?.normalize("NFD")
       ?.replace(/[\u0300-\u036f]/g, "")
-      ?.replace(/[^a-z0-9]/g, "") || "tina"
+      ?.replace(/[^a-z0-9]/g, "") || "client"
   );
 }
 
 console.log("🧪 Test flux parrainage complet\n");
 
-// 1. Active le programme si pas actif
 await pool.query(`UPDATE referral_config SET active = true WHERE id = 1`);
 console.log("✅ 1. Programme parrainage activé");
 
-// 2. Génère un code parrainage pour la marraine
 const code = `${normalizeReferralBase(MARRAINE_NAME)}-TEST1`;
 await pool.query(
   `
@@ -48,7 +43,6 @@ await pool.query(
 );
 console.log(`✅ 2. Code parrainage créé : ${code}`);
 
-// 3. Envoie l'email d'invitation à la marraine
 await sendReferralInviteEmail({
   email: MARRAINE_EMAIL,
   customerName: MARRAINE_NAME,
@@ -58,7 +52,6 @@ await sendReferralInviteEmail({
 });
 console.log(`✅ 3. Email invitation envoyé à ${MARRAINE_EMAIL}`);
 
-// 4. Simule un clic de la filleule sur le lien
 await pool.query(
   `
   UPDATE referrals SET
@@ -70,7 +63,6 @@ await pool.query(
 );
 console.log(`✅ 4. Clic simulé — ${FILLEULE_NAME} a cliqué sur le lien`);
 
-// 5. Simule une commande de la filleule
 await pool.query(
   `
   UPDATE referrals SET
@@ -83,7 +75,6 @@ await pool.query(
 );
 console.log(`✅ 5. Commande simulée — ${FILLEULE_NAME} a commandé`);
 
-// 6. Génère le code promo récompense pour la marraine
 const rewardCode = `MERCI-${code.toUpperCase().substring(0, 8)}`;
 await pool.query(
   `
@@ -95,7 +86,6 @@ await pool.query(
 );
 console.log(`✅ 6. Code récompense créé : ${rewardCode}`);
 
-// 7. Envoie l'email récompense à la marraine
 await sendReferralRewardEmail({
   email: MARRAINE_EMAIL,
   customerName: MARRAINE_NAME,
@@ -104,7 +94,6 @@ await sendReferralRewardEmail({
 });
 console.log(`✅ 7. Email récompense envoyé à ${MARRAINE_EMAIL}`);
 
-// 8. Affiche le résultat final en base
 const result = await pool.query(
   `
   SELECT referral_code, referrer_email, referee_email, status, converted_at
@@ -115,14 +104,12 @@ const result = await pool.query(
 console.log("\n📊 État final en base :");
 console.log(result.rows[0]);
 
-// 9. Nettoyage (optionnel — commente si tu veux garder les données)
 await pool.query(`DELETE FROM referrals WHERE referral_code = $1`, [code]);
 await pool.query(`DELETE FROM promo_codes WHERE code = $1`, [rewardCode]);
 console.log("\n🧹 Données de test nettoyées");
 
 console.log("\n✅ Flux complet testé avec succès !");
-console.log("📧 Vérifie les boîtes email :");
+console.log("📧 Vérifie la boîte email :");
 console.log(`   - ${MARRAINE_EMAIL} → email invitation + email récompense`);
-console.log(`   - (${FILLEULE_EMAIL} ne reçoit pas d'email dans ce test)`);
 
 await pool.end();

@@ -1,4 +1,4 @@
--- TinaLuxe — schéma e-commerce extensible
+-- Boutique template — schéma e-commerce extensible
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
@@ -200,9 +200,7 @@ CREATE TABLE IF NOT EXISTS nav_groups (
 );
 
 INSERT INTO nav_groups (name, sort_order) VALUES
-  ('Soins', 1),
-  ('Infusions', 2),
-  ('Cheveux', 3)
+  ('Boutique', 1)
 ON CONFLICT (name) DO NOTHING;
 
 -- ─── Catégories produits ───
@@ -219,10 +217,7 @@ CREATE TABLE IF NOT EXISTS categories (
 );
 
 INSERT INTO categories (slug, name, color, nav_group, sort_order) VALUES
-  ('karite', 'Karité', '#D4AF37', 'Soins', 1),
-  ('savon', 'Savon', '#81C784', 'Soins', 2),
-  ('the', 'Thés & Infusions', '#64B5F6', 'Infusions', 3),
-  ('cheveux', 'Extensions & Soins Cheveux', '#A78BFA', 'Cheveux', 4)
+  ('exemple', 'Exemple', '#D4AF37', 'Boutique', 1)
 ON CONFLICT (slug) DO NOTHING;
 
 -- ─── Paniers abandonnés ───
@@ -301,7 +296,7 @@ ON CONFLICT (key) DO NOTHING;
 INSERT INTO settings (key, value) VALUES
   ('popup_enabled', 'true'),
   ('popup_discount', '10'),
-  ('popup_title', 'Bienvenue chez TinaLuxe ✨'),
+  ('popup_title', 'Bienvenue chez Ma Boutique ✨'),
   ('popup_subtitle', 'Rejoignez notre communauté et recevez'),
   ('popup_delay', '5')
 ON CONFLICT (key) DO NOTHING;

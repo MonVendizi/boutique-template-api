@@ -64,10 +64,22 @@ const allowedOrigins = [
   FRONTEND_URL,
   "http://localhost:3000",
   "http://localhost:3001",
+  // Accepte toutes les URLs de preview Vercel
+  /\.vercel\.app$/,
 ];
 
 await fastify.register(cors, {
-  origin: allowedOrigins,
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true); // requêtes sans origin (curl, Postman)
+    if (
+      allowedOrigins.some((allowed) =>
+        allowed instanceof RegExp ? allowed.test(origin) : allowed === origin
+      )
+    ) {
+      return cb(null, true);
+    }
+    return cb(new Error("Not allowed by CORS"), false);
+  },
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "x-admin-password"],
   credentials: true,

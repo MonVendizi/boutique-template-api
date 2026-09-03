@@ -12,7 +12,7 @@ const category = {
   name: "Exemple",
   description: "Catégorie exemple pour démarrer votre catalogue.",
   color: "#D4AF37",
-  nav_group: "Boutique",
+  nav_group: "Exemple",
   sort_order: 1,
 };
 
@@ -46,31 +46,42 @@ const baseSettings = [
 async function seed() {
   console.log("Seed générique — catégorie, produit et settings de base…");
 
-  await pool.query(
-    `INSERT INTO nav_groups (name, sort_order)
-     VALUES ('Boutique', 1)
-     ON CONFLICT (name) DO NOTHING`
-  );
+  // 1. Crée un groupe de navigation "Exemple" (évite le doublon avec le lien Boutique)
+  await pool.query(`
+    INSERT INTO nav_groups (name, sort_order)
+    VALUES ('Exemple', 1)
+    ON CONFLICT (name) DO NOTHING
+  `);
 
+  const groupResult = await pool.query(
+    `SELECT id, name FROM nav_groups WHERE name = 'Exemple'`
+  );
+  const groupName = groupResult.rows[0]?.name || "Exemple";
+
+  // 2. Crée la catégorie "Exemple" dans ce groupe
+  // Note : categories.nav_group stocke le NOM du groupe (join sur nav_groups.name)
   await pool.query(
-    `INSERT INTO categories (slug, name, description, color, nav_group, sort_order, active)
-     VALUES ($1, $2, $3, $4, $5, $6, true)
-     ON CONFLICT (slug) DO UPDATE SET
-       name = EXCLUDED.name,
-       description = EXCLUDED.description,
-       color = EXCLUDED.color,
-       nav_group = EXCLUDED.nav_group,
-       sort_order = EXCLUDED.sort_order`,
+    `
+    INSERT INTO categories (slug, name, description, color, nav_group, sort_order, active)
+    VALUES ($1, $2, $3, $4, $5, $6, true)
+    ON CONFLICT (slug) DO UPDATE SET
+      name = EXCLUDED.name,
+      description = EXCLUDED.description,
+      color = EXCLUDED.color,
+      nav_group = EXCLUDED.nav_group,
+      sort_order = EXCLUDED.sort_order,
+      active = true
+  `,
     [
       category.slug,
       category.name,
       category.description,
       category.color,
-      category.nav_group,
+      groupName,
       category.sort_order,
     ]
   );
-  console.log(`  ✓ Catégorie : ${category.name}`);
+  console.log(`  ✓ Groupe nav + catégorie : ${groupName} / ${category.name}`);
 
   await pool.query(
     `INSERT INTO products (name, slug, category, description, price_cents, sku, stock, images, highlights, featured, active)

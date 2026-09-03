@@ -107,6 +107,9 @@ const defaults = [
   // Checkout
   ["shipping_cents", "490", "number", "checkout", "Frais de port (centimes)"],
   ["shipping_countries", '["FR","BE","CH","LU"]', "json", "checkout", "Pays disponibles"],
+  ["shipping_delay_preparation", "24-48h ouvrés", "text", "checkout", "Délai de préparation"],
+  ["shipping_delay_delivery", "2-4 jours ouvrés", "text", "checkout", "Délai de livraison"],
+  ["shipping_carrier", "Colissimo", "text", "checkout", "Transporteur"],
   ["welcome_promo_code", "BIENVENUE10", "text", "checkout", "Code promo bienvenue"],
   ["inactive_promo_code", "RETOUR10", "text", "checkout", "Code promo inactifs"],
 

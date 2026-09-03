@@ -74,31 +74,51 @@ async function fetchNavGroupById(id) {
   return rows[0] || null;
 }
 
+// Cache mémoire — 60 secondes
+let navGroupsCache = null;
+let navGroupsCacheTime = 0;
+let categoriesCache = null;
+let categoriesCacheTime = 0;
+const CACHE_TTL = 60_000;
+
 export default async function categoriesRoutes(fastify) {
   fastify.get("/categories", async (_request, reply) => {
     reply.header("Access-Control-Allow-Origin", "*");
     reply.header("Cache-Control", "public, max-age=60, s-maxage=60");
+    const now = Date.now();
+    if (categoriesCache && now - categoriesCacheTime < CACHE_TTL) {
+      return categoriesCache;
+    }
     const { rows } = await pool.query(
       `${CATEGORY_SELECT}
        WHERE c.active = true
        GROUP BY c.id
        ORDER BY c.sort_order ASC, c.name ASC`
     );
+    categoriesCache = rows;
+    categoriesCacheTime = now;
     return rows;
   });
 
   fastify.get("/nav-groups", async (_request, reply) => {
     reply.header("Access-Control-Allow-Origin", "*");
     reply.header("Cache-Control", "public, max-age=60, s-maxage=60");
+    const now = Date.now();
+    if (navGroupsCache && now - navGroupsCacheTime < CACHE_TTL) {
+      return navGroupsCache;
+    }
     const { rows } = await pool.query(
       `SELECT id, name, sort_order
        FROM nav_groups
        ORDER BY sort_order ASC, name ASC`
     );
-    return rows.map((row, index) => ({
+    const result = rows.map((row, index) => ({
       ...row,
       nav_tier: index < NAV_MAIN_GROUP_LIMIT ? "main" : "more",
     }));
+    navGroupsCache = result;
+    navGroupsCacheTime = now;
+    return result;
   });
 
   fastify.get("/admin/categories", async (request, reply) => {

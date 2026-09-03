@@ -34,7 +34,6 @@ import { getGoogleReviewUrl } from "./lib/settings.js";
 import { getReferralConfig } from "./routes/referrals.js";
 
 const PORT = Number(process.env.PORT) || 3001;
-const FRONTEND_URL = process.env.FRONTEND_URL || "https://maboutique.fr";
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
@@ -60,26 +59,8 @@ fastify.addContentTypeParser(
   }
 );
 
-const allowedOrigins = [
-  FRONTEND_URL,
-  "http://localhost:3000",
-  "http://localhost:3001",
-  // Accepte toutes les URLs de preview Vercel
-  /\.vercel\.app$/,
-];
-
 await fastify.register(cors, {
-  origin: (origin, cb) => {
-    if (!origin) return cb(null, true); // requêtes sans origin (curl, Postman)
-    if (
-      allowedOrigins.some((allowed) =>
-        allowed instanceof RegExp ? allowed.test(origin) : allowed === origin
-      )
-    ) {
-      return cb(null, true);
-    }
-    return cb(new Error("Not allowed by CORS"), false);
-  },
+  origin: true,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "x-admin-password"],
   credentials: true,

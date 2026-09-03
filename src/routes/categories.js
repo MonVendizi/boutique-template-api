@@ -85,7 +85,8 @@ export default async function categoriesRoutes(fastify) {
     return rows;
   });
 
-  fastify.get("/nav-groups", async () => {
+  fastify.get("/nav-groups", async (_request, reply) => {
+    reply.header("Cache-Control", "public, max-age=60, s-maxage=60");
     const { rows } = await pool.query(
       `SELECT id, name, sort_order
        FROM nav_groups

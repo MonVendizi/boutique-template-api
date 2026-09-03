@@ -40,6 +40,8 @@ const PRODUCT_FIELDS = `
 
 export default async function productsRoutes(fastify) {
   fastify.get("/products", async (request, reply) => {
+    reply.header("Access-Control-Allow-Origin", "*");
+    reply.header("Cache-Control", "public, max-age=60, s-maxage=60");
     const { category } = request.query;
 
     let query = `

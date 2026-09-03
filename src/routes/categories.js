@@ -75,7 +75,9 @@ async function fetchNavGroupById(id) {
 }
 
 export default async function categoriesRoutes(fastify) {
-  fastify.get("/categories", async () => {
+  fastify.get("/categories", async (_request, reply) => {
+    reply.header("Access-Control-Allow-Origin", "*");
+    reply.header("Cache-Control", "public, max-age=60, s-maxage=60");
     const { rows } = await pool.query(
       `${CATEGORY_SELECT}
        WHERE c.active = true
@@ -86,6 +88,7 @@ export default async function categoriesRoutes(fastify) {
   });
 
   fastify.get("/nav-groups", async (_request, reply) => {
+    reply.header("Access-Control-Allow-Origin", "*");
     reply.header("Cache-Control", "public, max-age=60, s-maxage=60");
     const { rows } = await pool.query(
       `SELECT id, name, sort_order

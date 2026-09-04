@@ -27,6 +27,7 @@ const defaults = [
   ["brand_logo_url", "", "image", "identity", "Logo URL"],
   ["brand_favicon_url", "", "image", "identity", "Favicon URL"],
   ["admin_greeting", "Bonjour 👋", "text", "identity", "Message accueil admin"],
+  ["brand_charter", "{}", "json", "identity", "Charte de marque"],
 
   // Couleurs
   ["color_primary", "#D4AF37", "color", "colors", "Couleur principale"],

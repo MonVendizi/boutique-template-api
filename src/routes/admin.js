@@ -59,6 +59,46 @@ function hasGaCredentials() {
   }
 }
 
+async function upsertProductVariants(productId, payload) {
+  const hasVariants = Boolean(payload.has_variants);
+  const variantType = payload.variant_type || "size";
+  const variants = Array.isArray(payload.variants) ? payload.variants : [];
+
+  await pool.query(
+    `UPDATE products
+     SET has_variants = $1, variant_type = $2
+     WHERE id = $3`,
+    [hasVariants, variantType, productId]
+  );
+
+  await pool.query(`DELETE FROM product_variants WHERE product_id = $1`, [
+    productId,
+  ]);
+
+  if (hasVariants) {
+    await pool.query(
+      `INSERT INTO product_variants (product_id, type, options)
+       VALUES ($1, $2, $3::jsonb)`,
+      [productId, variantType, JSON.stringify(variants)]
+    );
+  }
+}
+
+async function loadVariantsMap(productIds) {
+  if (!productIds.length) return {};
+  const { rows } = await pool.query(
+    `SELECT product_id, type, options
+     FROM product_variants
+     WHERE product_id = ANY($1::uuid[])`,
+    [productIds]
+  );
+  const map = {};
+  for (const row of rows) {
+    map[row.product_id] = Array.isArray(row.options) ? row.options : [];
+  }
+  return map;
+}
+
 async function updateProduct(id, fields, reply) {
   const { price_cents, stock, active, featured } = fields;
 
@@ -235,12 +275,17 @@ export default async function adminRoutes(fastify) {
     const { rows } = await pool.query(
       `SELECT id, name, slug, category, sku, price_cents, stock, active, featured,
               badge, sort_order, images, highlights, description, short_description, subtitle, unit,
-              origin, seo_title, seo_description, landing_page_enabled, landing_page_config, updated_at
+              origin, seo_title, seo_description, landing_page_enabled, landing_page_config,
+              has_variants, variant_type, updated_at
        FROM products
        ${includeInactive ? "" : "WHERE active = true"}
        ORDER BY sort_order ASC, category, name`
     );
-    return rows;
+    const variantsMap = await loadVariantsMap(rows.map((r) => r.id));
+    return rows.map((row) => ({
+      ...row,
+      variants: variantsMap[row.id] || [],
+    }));
   });
 
   fastify.post("/admin/products", async (request, reply) => {
@@ -269,12 +314,13 @@ export default async function adminRoutes(fastify) {
            name, category, subtitle, short_description, description,
            price_cents, unit, sku, slug, stock, images, highlights, origin,
            seo_title, seo_description, active, featured, badge, sort_order,
-           landing_page_enabled, landing_page_config
+           landing_page_enabled, landing_page_config,
+           has_variants, variant_type
          ) VALUES (
-           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,$14,$15,$16,$17,$18,$19,$20,$21::jsonb
+           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,$14,$15,$16,$17,$18,$19,$20,$21::jsonb,$22,$23
          )
          RETURNING id, name, slug, sku, price_cents, stock, active, featured, badge, sort_order, images,
-                   landing_page_enabled, landing_page_config`,
+                   landing_page_enabled, landing_page_config, has_variants, variant_type`,
         [
           p.name,
           p.category,
@@ -297,10 +343,22 @@ export default async function adminRoutes(fastify) {
           Number(p.sort_order) || 0,
           Boolean(p.landing_page_enabled),
           JSON.stringify(p.landing_page_config || {}),
+          Boolean(p.has_variants),
+          p.variant_type || "size",
         ]
       );
 
-      return { success: true, id: rows[0].id, product: rows[0] };
+      await upsertProductVariants(rows[0].id, p);
+      const variantsMap = await loadVariantsMap([rows[0].id]);
+
+      return {
+        success: true,
+        id: rows[0].id,
+        product: {
+          ...rows[0],
+          variants: variantsMap[rows[0].id] || [],
+        },
+      };
     } catch (err) {
       console.error("POST /admin/products:", err);
       const msg = err instanceof Error ? err.message : "Erreur création";
@@ -382,7 +440,8 @@ export default async function adminRoutes(fastify) {
            WHERE id = $${params.length}
            RETURNING id, name, slug, sku, price_cents, stock, active, featured, badge, sort_order, images,
                      category, unit, origin, subtitle, short_description, description,
-                     highlights, seo_title, seo_description, landing_page_enabled, landing_page_config`,
+                     highlights, seo_title, seo_description, landing_page_enabled, landing_page_config,
+                     has_variants, variant_type`,
           params
         );
 
@@ -390,7 +449,25 @@ export default async function adminRoutes(fastify) {
           return reply.code(404).send({ error: "Introuvable" });
         }
 
-        return { success: true, product: rows[0] };
+        if (p.has_variants !== undefined || p.variants !== undefined) {
+          await upsertProductVariants(id, {
+            has_variants:
+              p.has_variants !== undefined
+                ? p.has_variants
+                : rows[0].has_variants,
+            variant_type: p.variant_type || rows[0].variant_type || "size",
+            variants: p.variants,
+          });
+        }
+
+        const variantsMap = await loadVariantsMap([id]);
+        return {
+          success: true,
+          product: {
+            ...rows[0],
+            variants: variantsMap[id] || [],
+          },
+        };
       } catch (err) {
         console.error("PUT /admin/products/:id:", err);
         const msg = err instanceof Error ? err.message : "Erreur mise à jour";

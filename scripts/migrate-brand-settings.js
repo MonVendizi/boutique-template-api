@@ -113,6 +113,7 @@ const defaults = [
   ["shipping_carrier", "Colissimo", "text", "checkout", "Transporteur"],
   ["welcome_promo_code", "BIENVENUE10", "text", "checkout", "Code promo bienvenue"],
   ["inactive_promo_code", "RETOUR10", "text", "checkout", "Code promo inactifs"],
+  ["enable_variants", "false", "boolean", "checkout", "Activer les variantes produits"],
 
   // Emails
   ["email_sender_name", "Ma Boutique", "text", "emails", "Nom expéditeur"],

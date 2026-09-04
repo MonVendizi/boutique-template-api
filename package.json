@@ -28,6 +28,7 @@
     "migrate:popup-settings": "node scripts/migrate-popup-settings.js",
     "migrate:products-display": "node scripts/migrate-products-display.js",
     "migrate:brand": "node scripts/migrate-brand-settings.js",
+    "migrate:variants": "node scripts/migrate-variants.js",
     "clean:products": "node scripts/clean-products.js",
     "import:reviews": "node scripts/import-reviews.js",
     "seed:calendar": "node scripts/seed-calendar.js",

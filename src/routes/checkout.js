@@ -64,7 +64,7 @@ export default async function checkoutRoutes(fastify) {
         price_data: {
           currency: product.currency,
           product_data: {
-            name: product.name,
+            name: `${product.name}${item.variant?.label ? ` — ${item.variant.label}` : ""}`,
             metadata: { slug: product.slug, sku: product.sku },
           },
           unit_amount: product.price_cents,
@@ -79,6 +79,15 @@ export default async function checkoutRoutes(fastify) {
         sku: product.sku,
         quantity: item.quantity,
         unit_price_cents: product.price_cents,
+        ...(item.variant
+          ? {
+              variant: {
+                type: item.variant.type,
+                label: item.variant.label,
+                stock: item.variant.stock,
+              },
+            }
+          : {}),
       });
     }
 

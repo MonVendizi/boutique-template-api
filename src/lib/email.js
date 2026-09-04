@@ -25,8 +25,8 @@ async function getBrandSettings() {
       colorPrimary: s.color_primary || "#D4AF37",
       colorDark: s.color_dark || "#0B0B0B",
       siteUrl: s.seo_site_url || "https://maboutique.fr",
-      welcomePromoCode: s.welcome_promo_code || "BIENVENUE10",
-      inactivePromoCode: s.inactive_promo_code || "RETOUR10",
+      welcomePromoCode: s.welcome_promo_code || "",
+      inactivePromoCode: s.inactive_promo_code || "",
     };
   } catch {
     return {
@@ -39,8 +39,8 @@ async function getBrandSettings() {
       colorPrimary: "#D4AF37",
       colorDark: "#0B0B0B",
       siteUrl: "https://maboutique.fr",
-      welcomePromoCode: "BIENVENUE10",
-      inactivePromoCode: "RETOUR10",
+      welcomePromoCode: "",
+      inactivePromoCode: "",
     };
   }
 }
@@ -964,7 +964,20 @@ export async function sendWelcomeEmail({
         </a>
       </p>`
     : "";
-  const expiryFormatted = getWelcomeCodeExpiryFormatted(15);
+  const promoCode = brand.welcomePromoCode || "";
+  const expiryFormatted = promoCode ? getWelcomeCodeExpiryFormatted(15) : "";
+
+  const promoBlock = promoCode
+    ? `
+    <div style="margin:28px 0;padding:20px;border:1px solid rgba(212,175,55,.35);border-radius:12px;background:rgba(212,175,55,.08);text-align:center;">
+      <p style="margin:0 0 8px;font-size:12px;letter-spacing:.1em;color:rgba(212,175,55,.7);text-transform:uppercase;">Votre cadeau de bienvenue</p>
+      <p style="margin:0 0 4px;font-size:28px;font-weight:700;color:${brand.colorPrimary};letter-spacing:2px;">${escapeHtml(promoCode)}</p>
+      <p style="margin:0;color:rgba(234,234,234,.65);font-size:14px;">sur votre première commande</p>
+      <div style="font-size:12px;color:rgba(234,234,234,.4);margin-top:6px;">
+        Valable 15 jours — à utiliser avant le ${escapeHtml(expiryFormatted)}
+      </div>
+    </div>`
+    : "";
 
   const bodyHtml = `
     <p style="margin:0 0 20px;text-align:center;font-size:17px;color:#EAEAEA;">${hello} ✨</p>
@@ -972,14 +985,7 @@ export async function sendWelcomeEmail({
       Bienvenue chez ${escapeHtml(brand.brandName)} ! Découvrez nos produits soigneusement
       sélectionnés pour vous offrir une expérience unique.
     </p>
-    <div style="margin:28px 0;padding:20px;border:1px solid rgba(212,175,55,.35);border-radius:12px;background:rgba(212,175,55,.08);text-align:center;">
-      <p style="margin:0 0 8px;font-size:12px;letter-spacing:.1em;color:rgba(212,175,55,.7);text-transform:uppercase;">Votre cadeau de bienvenue</p>
-      <p style="margin:0 0 4px;font-size:28px;font-weight:700;color:${brand.colorPrimary};letter-spacing:2px;">${escapeHtml(brand.welcomePromoCode)}</p>
-      <p style="margin:0;color:rgba(234,234,234,.65);font-size:14px;">-10% sur votre première commande</p>
-      <div style="font-size:12px;color:rgba(234,234,234,.4);margin-top:6px;">
-        Valable 15 jours — à utiliser avant le ${escapeHtml(expiryFormatted)}
-      </div>
-    </div>
+    ${promoBlock}
     ${loyaltyHtml}
     ${newsletterSequenceUnsubFooter(email, brand)}
   `;
@@ -1010,7 +1016,18 @@ export async function sendWelcomeEmail({
 export async function sendWelcomeJ3Email({ email, customerName }) {
   const brand = await getBrandSettings();
   const prenom = firstName(customerName) || "vous";
-  const expiryFormatted = getWelcomeCodeExpiryFormatted(12);
+  const promoCode = brand.welcomePromoCode || "";
+  const expiryFormatted = promoCode ? getWelcomeCodeExpiryFormatted(12) : "";
+
+  const promoReminder = promoCode
+    ? `
+    <p style="margin:0;text-align:center;color:rgba(234,234,234,.6);font-size:14px;">
+      N'oubliez pas votre code <strong style="color:${brand.colorPrimary};">${escapeHtml(promoCode)}</strong>
+    </p>
+    <p style="margin:8px 0 0;text-align:center;font-size:12px;color:rgba(234,234,234,.4);">
+      Valable 15 jours — à utiliser avant le ${escapeHtml(expiryFormatted)}
+    </p>`
+    : "";
 
   const bodyHtml = `
     <p style="margin:0 0 16px;line-height:1.8;">
@@ -1025,12 +1042,7 @@ export async function sendWelcomeJ3Email({ email, customerName }) {
         <li>Livraison rapide</li>
       </ul>
     </div>
-    <p style="margin:0;text-align:center;color:rgba(234,234,234,.6);font-size:14px;">
-      N'oubliez pas votre code <strong style="color:${brand.colorPrimary};">${escapeHtml(brand.welcomePromoCode)}</strong> (-10%)
-    </p>
-    <p style="margin:8px 0 0;text-align:center;font-size:12px;color:rgba(234,234,234,.4);">
-      Valable 15 jours — à utiliser avant le ${escapeHtml(expiryFormatted)}
-    </p>
+    ${promoReminder}
     ${newsletterSequenceUnsubFooter(email, brand)}
   `;
 
@@ -1060,12 +1072,11 @@ export async function sendWelcomeJ3Email({ email, customerName }) {
 export async function sendWelcomeJ7Email({ email, customerName }) {
   const brand = await getBrandSettings();
   const prenom = firstName(customerName) || "vous";
-  const expiryFormatted = getWelcomeCodeExpiryFormatted(8);
+  const promoCode = brand.welcomePromoCode || "";
+  const expiryFormatted = promoCode ? getWelcomeCodeExpiryFormatted(8) : "";
 
-  const bodyHtml = `
-    <p style="margin:0 0 20px;line-height:1.8;text-align:center;font-size:17px;color:#EAEAEA;">
-      ${escapeHtml(prenom)}, ne manquez pas cette offre 💛
-    </p>
+  const promoUrgency = promoCode
+    ? `
     <div style="background:rgba(239,83,80,.1);border:1px solid rgba(239,83,80,.2);border-radius:8px;padding:12px;text-align:center;margin-bottom:20px;">
       <div style="color:#EF5350;font-weight:700;font-size:14px;">
         ⏰ Votre code expire dans 8 jours
@@ -1076,13 +1087,23 @@ export async function sendWelcomeJ7Email({ email, customerName }) {
     </div>
     <p style="margin:0 0 20px;line-height:1.8;">
       C'est votre <strong style="color:${brand.colorPrimary};">dernière chance</strong> d'utiliser
-      votre code <strong style="color:${brand.colorPrimary};">${escapeHtml(brand.welcomePromoCode)}</strong> pour -10% sur votre première commande.
-    </p>
-    <p style="margin:0 0 20px;line-height:1.8;text-align:center;">
-      Rejoignez nos clientes qui ont déjà adopté ${escapeHtml(brand.brandName)}.
+      votre code <strong style="color:${brand.colorPrimary};">${escapeHtml(promoCode)}</strong> sur votre première commande.
     </p>
     <p style="margin:0;text-align:center;color:#EF9A9A;font-size:13px;font-weight:600;">
-      ⏳ Code ${escapeHtml(brand.welcomePromoCode)} — expire le ${escapeHtml(expiryFormatted)}
+      ⏳ Code ${escapeHtml(promoCode)} — expire le ${escapeHtml(expiryFormatted)}
+    </p>`
+    : `
+    <p style="margin:0 0 20px;line-height:1.8;">
+      C'est le moment idéal pour découvrir nos produits et passer votre première commande.
+    </p>`;
+
+  const bodyHtml = `
+    <p style="margin:0 0 20px;line-height:1.8;text-align:center;font-size:17px;color:#EAEAEA;">
+      ${escapeHtml(prenom)}, ne manquez pas cette offre 💛
+    </p>
+    ${promoUrgency}
+    <p style="margin:20px 0 0;line-height:1.8;text-align:center;">
+      Rejoignez nos clientes qui ont déjà adopté ${escapeHtml(brand.brandName)}.
     </p>
     ${newsletterSequenceUnsubFooter(email, brand)}
   `;

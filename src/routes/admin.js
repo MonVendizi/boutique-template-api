@@ -436,6 +436,8 @@ export default async function adminRoutes(fastify) {
 
   fastify.delete("/admin/products/:id", async (request, reply) => {
     const { id } = request.params;
+    // Supprime les données liées avant le produit
+    await pool.query(`DELETE FROM stock_movements WHERE product_id = $1`, [id]);
     const { rows } = await pool.query(
       `DELETE FROM products WHERE id = $1 RETURNING id`,
       [id]

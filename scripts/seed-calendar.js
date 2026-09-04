@@ -3,6 +3,15 @@ import pool from "../src/db/pool.js";
 
 dotenv.config();
 
+const WELCOME_CODE = process.env.WELCOME_PROMO_CODE || "BIENVENUE10";
+const RETURN_CODE = process.env.INACTIVE_PROMO_CODE || "RETOUR10";
+
+// Codes événements — génériques et personnalisables
+const VALENTINE_CODE = "AMOUR14"; // le client peut changer dans admin
+const WOMENSDAY_CODE = "FEMME8MARS";
+const MOTHERS_CODE = "MAMAN";
+const BLACK_FRIDAY_CODE = "BLACK20";
+
 function formatDate(date) {
   return date.toISOString().slice(0, 10);
 }
@@ -139,8 +148,7 @@ const GENERIC_TASKS = [
   },
   {
     title: "Créer vos premiers codes promo",
-    description:
-      "Admin → Codes Promo → créer BIENVENUE10 pour les nouveaux abonnés et RETOUR10 pour les clients inactifs.",
+    description: `Admin → Codes Promo → créer ${WELCOME_CODE} pour les nouveaux abonnés et ${RETURN_CODE} pour les clients inactifs.`,
     date: MONTH1,
     type: "task",
   },
@@ -171,36 +179,31 @@ const GENERIC_TASKS = [
   // Événements commerciaux (dates relatives)
   {
     title: "Préparer la campagne Saint-Valentin",
-    description:
-      "Créer code promo AMOUR14. Préparer newsletter et posts réseaux sociaux sur le thème des cadeaux.",
+    description: `Créer un code promo Saint-Valentin (ex: ${VALENTINE_CODE}) dans Admin → Codes Promo. Préparer newsletter et posts réseaux sociaux sur le thème des cadeaux.`,
     date: FEB14_MINUS_14,
     type: "promo",
   },
   {
     title: "Lancer la campagne Saint-Valentin",
-    description:
-      "Envoyer la newsletter Saint-Valentin. Publier sur Instagram et TikTok. Activer le code AMOUR14.",
+    description: `Envoyer la newsletter Saint-Valentin. Publier sur Instagram et TikTok. Activer le code promo Saint-Valentin (ex: ${VALENTINE_CODE}).`,
     date: FEB14,
     type: "promo",
   },
   {
     title: "Préparer la Journée de la Femme",
-    description:
-      "Créer code promo FEMME8MARS. Préparer des visuels et une newsletter dédiée.",
+    description: `Créer un code promo Journée de la Femme (ex: ${WOMENSDAY_CODE}) dans Admin → Codes Promo. Préparer des visuels et une newsletter dédiée.`,
     date: MAR8_MINUS_7,
     type: "promo",
   },
   {
     title: "Lancer la campagne Journée de la Femme",
-    description:
-      "Envoyer la newsletter. Publier posts et stories. Activer le code FEMME8MARS.",
+    description: `Envoyer la newsletter. Publier posts et stories. Activer le code promo Journée de la Femme (ex: ${WOMENSDAY_CODE}).`,
     date: MAR8,
     type: "promo",
   },
   {
     title: "Préparer la Fête des Mères",
-    description:
-      "Créer code promo MAMAN. Préparer visuels \"idées cadeaux\". Planifier 3 posts Instagram J-21, J-7, Jour J.",
+    description: `Créer un code promo Fête des Mères (ex: ${MOTHERS_CODE}) dans Admin → Codes Promo. Préparer visuels "idées cadeaux". Planifier 3 posts Instagram J-21, J-7, Jour J.`,
     date: MOTHERS_DAY_MINUS_21,
     type: "promo",
   },
@@ -213,15 +216,13 @@ const GENERIC_TASKS = [
   },
   {
     title: "Préparer le Black Friday",
-    description:
-      'Créer code promo BLACK20. Préparer les visuels. Teaser "quelque chose arrive le 27..." J-7.',
+    description: `Créer un code promo Black Friday (ex: ${BLACK_FRIDAY_CODE}) dans Admin → Codes Promo. Préparer les visuels. Teaser "quelque chose arrive le 27..." J-7.`,
     date: BLACK_FRIDAY_MINUS_7,
     type: "promo",
   },
   {
     title: "Lancer le Black Friday",
-    description:
-      "Activer le code BLACK20. Envoyer newsletter urgence. Publier stories et posts toutes les 4h.",
+    description: `Activer le code promo Black Friday (ex: ${BLACK_FRIDAY_CODE}). Envoyer newsletter urgence. Publier stories et posts toutes les 4h.`,
     date: BLACK_FRIDAY,
     type: "promo",
   },
@@ -257,8 +258,7 @@ const GENERIC_TASKS = [
   },
   {
     title: "Relancer les clients inactifs",
-    description:
-      "Admin → Clients inactifs → sélectionner les clients sans commande depuis 60 jours → Relancer avec RETOUR10.",
+    description: `Admin → Clients inactifs → sélectionner les clients sans commande depuis 60 jours → Relancer avec ${RETURN_CODE}.`,
     date: MONTH2,
     type: "task",
   },

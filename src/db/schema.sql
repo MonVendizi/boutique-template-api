@@ -349,3 +349,16 @@ CREATE TABLE IF NOT EXISTS review_reminders (
   sent_at TIMESTAMP DEFAULT NOW()
 );
 
+-- ─── Tenants (SaaS multi-tenant — mapping domaine → API client) ───
+CREATE TABLE IF NOT EXISTS tenants (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  domain VARCHAR(255) NOT NULL UNIQUE,
+  api_url VARCHAR(255) NOT NULL,
+  brand_name VARCHAR(255),
+  active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenants_domain ON tenants(domain);
+

@@ -5,6 +5,7 @@ import {
   loadPromoByCode,
 } from "./promo.js";
 import { computeReferralDiscount } from "./referrals.js";
+import { isBotEmail } from "../lib/botEmail.js";
 
 const SHIPPING_CENTS = 490; // 4,90€
 
@@ -184,6 +185,10 @@ export default async function checkoutRoutes(fastify) {
     }
 
     const customer = body.customer || {};
+    const customerEmail = String(customer.email || "").trim();
+    if (customerEmail && isBotEmail(customerEmail)) {
+      return reply.code(400).send({ error: "Email invalide" });
+    }
     const shipping = body.shipping || {};
 
     try {
@@ -251,7 +256,7 @@ export default async function checkoutRoutes(fastify) {
   });
 
   /** Sauvegarde un panier abandonné (email saisi au checkout) */
-  fastify.post("/checkout/save-cart", async (request) => {
+  fastify.post("/checkout/save-cart", async (request, reply) => {
     const body = request.body || {};
     const email = String(body.email || "")
       .trim()
@@ -259,6 +264,9 @@ export default async function checkoutRoutes(fastify) {
     const items = body.items;
     if (!email || !Array.isArray(items) || items.length === 0) {
       return { success: false };
+    }
+    if (isBotEmail(email)) {
+      return reply.code(400).send({ error: "Email invalide" });
     }
 
     const customerName = body.customer_name
@@ -301,11 +309,14 @@ export default async function checkoutRoutes(fastify) {
   });
 
   /** Marque un panier comme converti après paiement */
-  fastify.post("/checkout/mark-converted", async (request) => {
+  fastify.post("/checkout/mark-converted", async (request, reply) => {
     const email = String(request.body?.email || "")
       .trim()
       .toLowerCase();
     if (!email) return { success: false };
+    if (isBotEmail(email)) {
+      return reply.code(400).send({ error: "Email invalide" });
+    }
 
     await pool.query(
       `UPDATE abandoned_carts SET converted = true, updated_at = NOW() WHERE email = $1`,

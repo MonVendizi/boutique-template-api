@@ -4,6 +4,7 @@ import {
   sendWelcomeEmail,
 } from "../lib/email.js";
 import { getLoyaltyConfig } from "./loyalty.js";
+import { isBotEmail } from "../lib/botEmail.js";
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "https://maboutique.fr";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -72,6 +73,9 @@ export default async function newsletterRoutes(fastify) {
 
     if (!email || !EMAIL_RE.test(email)) {
       return reply.code(400).send({ error: "E-mail invalide" });
+    }
+    if (isBotEmail(email)) {
+      return reply.code(400).send({ error: "Email invalide" });
     }
 
     if (!checkSubscribeRateLimit(request, reply)) return;

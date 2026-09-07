@@ -1,4 +1,8 @@
 import pool from "../db/pool.js";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import { execSync } from "child_process";
 import {
   sendOrderPreparationEmail,
   sendOrderShippedEmail,
@@ -7,6 +11,9 @@ import {
 import { getSettings, setSettings } from "../lib/settings.js";
 import { createReferralForCustomer } from "./referrals.js";
 import { BetaAnalyticsDataClient } from "@google-analytics/data";
+
+const __adminDir = path.dirname(fileURLToPath(import.meta.url));
+const __apiRoot = path.join(__adminDir, "../..");
 
 const VALID_ORDER_STATUSES = [
   "pending",
@@ -1084,5 +1091,33 @@ export default async function adminRoutes(fastify) {
     }
     await setSettings(updates);
     return getSettings();
+  });
+
+  /** Initialise une nouvelle base Railway client (schema + brand + variants) */
+  fastify.post("/admin/migrate", async (request, reply) => {
+    if (!checkAdmin(request, reply)) return;
+    try {
+      const schemaPath = path.join(__adminDir, "../db/schema.sql");
+      const schemaSql = fs.readFileSync(schemaPath, "utf8");
+      await pool.query(schemaSql);
+
+      execSync("node scripts/migrate-brand-settings.js", {
+        stdio: "inherit",
+        cwd: __apiRoot,
+        env: process.env,
+      });
+      execSync("node scripts/migrate-variants.js", {
+        stdio: "inherit",
+        cwd: __apiRoot,
+        env: process.env,
+      });
+
+      return { success: true, message: "Migrations OK" };
+    } catch (error) {
+      request.log.error(error);
+      return reply
+        .code(500)
+        .send({ error: error.message || "Erreur migrations" });
+    }
   });
 }

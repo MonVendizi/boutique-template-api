@@ -127,6 +127,40 @@ async function fulfillOrderRecord({
 
     await client.query("COMMIT");
 
+    // Upsert customer CRM
+    try {
+      const emailNorm = String(customerEmail || "")
+        .trim()
+        .toLowerCase();
+      if (emailNorm) {
+        const nameParts = String(customerName || "")
+          .trim()
+          .split(/\s+/);
+        const firstName = nameParts[0] || null;
+        const lastName =
+          nameParts.length > 1 ? nameParts.slice(1).join(" ") : null;
+        await pool.query(
+          `INSERT INTO customers (
+             email, first_name, last_name, total_orders, total_spent_cents, last_order_at
+           ) VALUES ($1, $2, $3, 1, $4, NOW())
+           ON CONFLICT (email) DO UPDATE SET
+             first_name = COALESCE(EXCLUDED.first_name, customers.first_name),
+             last_name = COALESCE(EXCLUDED.last_name, customers.last_name),
+             total_orders = customers.total_orders + 1,
+             total_spent_cents = customers.total_spent_cents + EXCLUDED.total_spent_cents,
+             last_order_at = NOW()`,
+          [
+            emailNorm,
+            firstName ? firstName.slice(0, 100) : null,
+            lastName ? lastName.slice(0, 100) : null,
+            Math.max(0, Math.round(Number(totalCents) || 0)),
+          ]
+        );
+      }
+    } catch (custErr) {
+      console.error("Upsert customer échoué:", custErr.message);
+    }
+
     try {
       await applyAffiliateCommission({
         orderId: order.id,

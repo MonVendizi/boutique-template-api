@@ -238,6 +238,28 @@ export default async function referralsRoutes(fastify) {
     };
   });
 
+  /** Calcule la réduction filleule (utilisé par checkout / PaymentIntent) */
+  fastify.post("/referral/discount", async (request, reply) => {
+    const code = request.body?.code || request.body?.referral_code;
+    const cartTotal = Number(
+      request.body?.cart_total_cents ?? request.body?.subtotal_cents ?? 0
+    );
+    const result = await computeReferralDiscount(cartTotal, code);
+    if (!result.valid) {
+      return reply.code(400).send({
+        valid: false,
+        error: result.error || "Code parrainage invalide",
+        discount_cents: 0,
+      });
+    }
+    return {
+      valid: true,
+      discount_cents: result.discount_cents,
+      referral_code: result.referral_code,
+      referee_discount_percent: result.referee_discount_percent,
+    };
+  });
+
   fastify.get("/referral/my-code", async (request, reply) => {
     const email = String(request.query?.email || "")
       .trim()

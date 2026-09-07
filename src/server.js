@@ -24,6 +24,7 @@ import {
   sendAbandonedCartEmail,
   sendCalendarReminder,
   sendCrossSellEmail,
+  sendInactiveCustomerEmail,
   sendOrderDeliveredEmail,
   sendReviewReminderEmail,
   sendReferralInviteEmail,
@@ -391,6 +392,63 @@ async function processReferralInviteEmails() {
   }
 }
 
+/** Relance auto clients inactifs ~60 jours (fenêtre 60–61j pour 1 envoi) */
+async function processInactiveCustomerEmails() {
+  try {
+    const { rows } = await pool.query(
+      `SELECT
+         customer_email,
+         MAX(customer_name) AS customer_name,
+         (EXTRACT(EPOCH FROM (NOW() - MAX(created_at))) / 86400)::int AS days_inactive
+       FROM orders
+       WHERE status IN ('delivered', 'shipped', 'paid', 'preparation')
+         AND customer_email IS NOT NULL
+         AND TRIM(customer_email) <> ''
+       GROUP BY customer_email
+       HAVING MAX(created_at) < NOW() - INTERVAL '60 days'
+          AND MAX(created_at) >= NOW() - INTERVAL '61 days'
+       ORDER BY MAX(created_at) ASC
+       LIMIT 100`
+    );
+
+    for (const row of rows) {
+      try {
+        await sendInactiveCustomerEmail({
+          email: row.customer_email,
+          customerName: row.customer_name,
+          daysSince: Number(row.days_inactive) || 60,
+        });
+        console.log(`Email client inactif 60j envoyé — ${row.customer_email}`);
+      } catch (err) {
+        console.error(
+          `Email client inactif échoué (${row.customer_email}):`,
+          err.message
+        );
+      }
+    }
+  } catch (err) {
+    console.error("Job clients inactifs 60j:", err.message);
+  }
+}
+
+/** Planifie un job quotidien à 09:00 (heure serveur) */
+function scheduleDailyAt9(fn) {
+  const msUntilNext9 = () => {
+    const now = new Date();
+    const next = new Date(now);
+    next.setHours(9, 0, 0, 0);
+    if (next <= now) next.setDate(next.getDate() + 1);
+    return next.getTime() - now.getTime();
+  };
+
+  setTimeout(() => {
+    void fn();
+    setInterval(() => {
+      void fn();
+    }, DAY_MS);
+  }, msUntilNext9());
+}
+
 try {
   await fastify.listen({ port: PORT, host: "0.0.0.0" });
   console.log(`Boutique API → http://localhost:${PORT}`);
@@ -432,6 +490,10 @@ try {
   setInterval(() => {
     void processReferralInviteEmails();
   }, DAY_MS);
+
+  // Clients inactifs 60j — tous les jours à 9h
+  scheduleDailyAt9(processInactiveCustomerEmails);
+  console.log("Job clients inactifs 60j planifié (quotidien 09:00)");
 } catch (err) {
   fastify.log.error(err);
   process.exit(1);

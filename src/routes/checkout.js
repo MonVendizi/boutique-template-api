@@ -4,12 +4,18 @@ import {
   computePromoDiscount,
   loadPromoByCode,
 } from "./promo.js";
+import { computeReferralDiscount } from "./referrals.js";
 
 const SHIPPING_CENTS = 490; // 4,90€
 
 export default async function checkoutRoutes(fastify) {
   fastify.post("/checkout", async (request, reply) => {
-    const { items, promo_code, discount_cents: clientDiscount } = request.body || {};
+    const {
+      items,
+      promo_code,
+      referral_code,
+      discount_cents: clientDiscount,
+    } = request.body || {};
 
     if (!Array.isArray(items) || items.length === 0) {
       return reply.code(400).send({ error: "Le panier est vide" });
@@ -92,6 +98,7 @@ export default async function checkoutRoutes(fastify) {
     }
 
     let appliedPromo = null;
+    let appliedReferral = null;
     let discountCents = 0;
 
     if (promo_code) {
@@ -101,7 +108,6 @@ export default async function checkoutRoutes(fastify) {
         return reply.code(400).send({ error: result.error || "Code promo invalide" });
       }
       discountCents = result.discount_cents;
-      // Ne pas faire confiance au client — on recalcule côté serveur
       if (
         clientDiscount != null &&
         Math.abs(Number(clientDiscount) - discountCents) > 1
@@ -109,6 +115,15 @@ export default async function checkoutRoutes(fastify) {
         // tolérance 1 ct : on ignore le client et on garde le recalcul
       }
       appliedPromo = result.code;
+    } else if (referral_code) {
+      const result = await computeReferralDiscount(subtotalCents, referral_code);
+      if (!result.valid) {
+        return reply
+          .code(400)
+          .send({ error: result.error || "Code parrainage invalide" });
+      }
+      discountCents = result.discount_cents;
+      appliedReferral = result.referral_code;
     }
 
     const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
@@ -122,6 +137,7 @@ export default async function checkoutRoutes(fastify) {
       metadata: {
         items: JSON.stringify(metadataItems),
         promo_code: appliedPromo || "",
+        referral_code: appliedReferral || "",
         discount_cents: String(discountCents || 0),
         subtotal_cents: String(subtotalCents),
       },
@@ -143,12 +159,13 @@ export default async function checkoutRoutes(fastify) {
       ],
     };
 
-    if (discountCents > 0 && appliedPromo) {
+    if (discountCents > 0 && (appliedPromo || appliedReferral)) {
+      const label = appliedPromo || `PARRAIN-${appliedReferral}`;
       const coupon = await getStripe().coupons.create({
         amount_off: discountCents,
         currency,
         duration: "once",
-        name: `Promo ${appliedPromo}`.slice(0, 40),
+        name: `Promo ${label}`.slice(0, 40),
       });
       sessionParams.discounts = [{ coupon: coupon.id }];
     }

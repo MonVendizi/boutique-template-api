@@ -349,6 +349,21 @@ CREATE TABLE IF NOT EXISTS review_reminders (
   sent_at TIMESTAMP DEFAULT NOW()
 );
 
+-- ─── Clients (CRM léger, upsert à chaque commande payée) ───
+CREATE TABLE IF NOT EXISTS customers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email VARCHAR(255) NOT NULL UNIQUE,
+  first_name VARCHAR(100),
+  last_name VARCHAR(100),
+  total_orders INTEGER DEFAULT 0,
+  total_spent_cents INTEGER DEFAULT 0,
+  last_order_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_customers_email ON customers(email);
+CREATE INDEX IF NOT EXISTS idx_customers_last_order ON customers(last_order_at);
+
 -- ─── Tenants (SaaS multi-tenant — mapping domaine → API client) ───
 CREATE TABLE IF NOT EXISTS tenants (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

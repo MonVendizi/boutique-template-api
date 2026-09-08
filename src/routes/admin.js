@@ -25,6 +25,9 @@ const VALID_ORDER_STATUSES = [
   "refunded",
 ];
 
+/** Statuts comptabilisés dans les KPI CA / graphiques */
+const PAID_STATUSES = "('paid', 'preparation', 'shipped', 'delivered')";
+
 function checkAdmin(request, reply) {
   const password = request.headers["x-admin-password"];
 
@@ -624,14 +627,18 @@ export default async function adminRoutes(fastify) {
       pool.query(
         `SELECT COALESCE(SUM(total_cents), 0)::int AS total_cents, COUNT(*)::int AS count
          FROM orders
-         WHERE status IN ('paid', 'preparation', 'shipped', 'delivered')
-           AND created_at >= CURRENT_DATE`
+         WHERE status IN ${PAID_STATUSES}
+           AND (created_at AT TIME ZONE 'Europe/Paris')::date
+               = (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')::date`
       ),
       pool.query(
         `SELECT COALESCE(SUM(total_cents), 0)::int AS total_cents, COUNT(*)::int AS count
          FROM orders
-         WHERE status IN ('paid', 'preparation', 'shipped', 'delivered')
-           AND created_at >= date_trunc('month', CURRENT_DATE)`
+         WHERE status IN ${PAID_STATUSES}
+           AND created_at >= date_trunc(
+             'month',
+             CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris'
+           ) AT TIME ZONE 'Europe/Paris'`
       ),
       pool.query(
         `SELECT status, COUNT(*)::int AS count
@@ -1022,14 +1029,19 @@ export default async function adminRoutes(fastify) {
 
     const revenueChart = await pool.query(
       `SELECT
-         DATE(created_at) AS date,
-         COUNT(*)::int AS orders,
-         COALESCE(SUM(total_cents), 0)::int AS revenue_cents
-       FROM orders
-       WHERE created_at >= NOW() - make_interval(days => $1)
-         AND status NOT IN ('cancelled', 'refunded', 'pending')
-       GROUP BY DATE(created_at)
-       ORDER BY date ASC`,
+         d::date AS date,
+         COALESCE(COUNT(o.id), 0)::int AS orders,
+         COALESCE(SUM(o.total_cents), 0)::int AS revenue_cents
+       FROM generate_series(
+         (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')::date - ($1::int - 1),
+         (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')::date,
+         '1 day'::interval
+       ) d
+       LEFT JOIN orders o
+         ON (o.created_at AT TIME ZONE 'Europe/Paris')::date = d::date
+         AND o.status IN ${PAID_STATUSES}
+       GROUP BY d::date
+       ORDER BY d::date ASC`,
       [days]
     );
 
@@ -1039,8 +1051,11 @@ export default async function adminRoutes(fastify) {
          SUM(COALESCE((item->>'quantity')::int, 1))::int AS qty
        FROM orders,
          jsonb_array_elements(items) AS item
-       WHERE created_at >= DATE_TRUNC('month', NOW())
-         AND status NOT IN ('cancelled', 'refunded', 'pending')
+       WHERE created_at >= date_trunc(
+               'month',
+               CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris'
+             ) AT TIME ZONE 'Europe/Paris'
+         AND status IN ${PAID_STATUSES}
        GROUP BY COALESCE(item->>'name', 'Produit')
        ORDER BY qty DESC
        LIMIT 5`

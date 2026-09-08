@@ -146,6 +146,7 @@ const defaults = [
   // Tracking
   ["facebook_pixel_id", "", "text", "tracking", "Pixel Facebook ID"],
   ["ga4_measurement_id", "", "text", "tracking", "Google Analytics 4 ID"],
+  ["google_business_url", "", "text", "tracking", "Lien Google My Business"],
 ];
 
 for (const [key, value, type, category, label] of defaults) {

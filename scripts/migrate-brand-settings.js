@@ -142,6 +142,10 @@ const defaults = [
   ["legal_faq", "[]", "json", "legal", "FAQ"],
   ["legal_delivery", "", "richtext", "legal", "Page livraison"],
   ["legal_returns", "", "richtext", "legal", "Page retours"],
+
+  // Tracking
+  ["facebook_pixel_id", "", "text", "tracking", "Pixel Facebook ID"],
+  ["ga4_measurement_id", "", "text", "tracking", "Google Analytics 4 ID"],
 ];
 
 for (const [key, value, type, category, label] of defaults) {

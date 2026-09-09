@@ -49,7 +49,7 @@ function emailDomain(replyTo) {
   return replyTo?.split("@")[1] || "maboutique.fr";
 }
 
-function emailFrom(brand, prefix = "commandes") {
+function emailFrom(brand, prefix = "commande") {
   return `${brand.senderName} <${prefix}@${emailDomain(brand.replyTo)}>`;
 }
 
@@ -930,7 +930,7 @@ export async function sendNewsletterEmail({
   });
 
   const { data, error } = await resend.emails.send({
-    from: `${brand.signature} — ${brand.brandName} <newsletter@${emailDomain(brand.replyTo)}>`,
+    from: `${brand.signature} — ${brand.brandName} <contact@${emailDomain(brand.replyTo)}>`,
     replyTo: brand.replyTo,
     to,
     subject,
@@ -1247,7 +1247,7 @@ export async function sendCalendarReminder({
         : Promise.resolve();
 
   const { data, error } = await resend.emails.send({
-    from: emailFrom(brand, "commande"),
+    from: emailFrom(brand, "contact"),
     to: adminEmail,
     subject: `📅 Rappel ${brand.brandName} — ${title} demain`,
     html: `

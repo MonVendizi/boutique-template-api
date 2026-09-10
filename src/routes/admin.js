@@ -623,35 +623,50 @@ export default async function adminRoutes(fastify) {
 
   // ─── Stats ───
   fastify.get("/admin/stats", async () => {
-    const [dayRevenue, monthRevenue, orderCounts, lowStock] = await Promise.all([
-      pool.query(
-        `SELECT COALESCE(SUM(total_cents), 0)::int AS total_cents, COUNT(*)::int AS count
-         FROM orders
-         WHERE status IN ${PAID_STATUSES}
-           AND (created_at AT TIME ZONE 'Europe/Paris')::date
-               = (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')::date`
-      ),
-      pool.query(
-        `SELECT COALESCE(SUM(total_cents), 0)::int AS total_cents, COUNT(*)::int AS count
-         FROM orders
-         WHERE status IN ${PAID_STATUSES}
-           AND created_at >= date_trunc(
-             'month',
-             CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris'
-           ) AT TIME ZONE 'Europe/Paris'`
-      ),
-      pool.query(
-        `SELECT status, COUNT(*)::int AS count
-         FROM orders
-         GROUP BY status`
-      ),
-      pool.query(
-        `SELECT id, name, slug, sku, stock
-         FROM products
-         WHERE active = true AND stock <= 10
-         ORDER BY stock ASC`
-      ),
-    ]);
+    const [dayRevenue, monthRevenue, quarterRevenue, yearRevenue, orderCounts, lowStock] =
+      await Promise.all([
+        pool.query(
+          `SELECT COALESCE(SUM(total_cents), 0)::int AS total_cents, COUNT(*)::int AS count
+           FROM orders
+           WHERE status IN ${PAID_STATUSES}
+             AND (created_at AT TIME ZONE 'Europe/Paris')::date
+                 = (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')::date`
+        ),
+        pool.query(
+          `SELECT COALESCE(SUM(total_cents), 0)::int AS total_cents, COUNT(*)::int AS count
+           FROM orders
+           WHERE status IN ${PAID_STATUSES}
+             AND created_at >= date_trunc(
+               'month',
+               CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris'
+             ) AT TIME ZONE 'Europe/Paris'`
+        ),
+        pool.query(
+          `SELECT COALESCE(SUM(total_cents), 0)::int AS total_cents, COUNT(*)::int AS count
+           FROM orders
+           WHERE status IN ${PAID_STATUSES}
+             AND (created_at AT TIME ZONE 'Europe/Paris')::date
+                 >= (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')::date - 89`
+        ),
+        pool.query(
+          `SELECT COALESCE(SUM(total_cents), 0)::int AS total_cents, COUNT(*)::int AS count
+           FROM orders
+           WHERE status IN ${PAID_STATUSES}
+             AND (created_at AT TIME ZONE 'Europe/Paris')::date
+                 >= (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')::date - 364`
+        ),
+        pool.query(
+          `SELECT status, COUNT(*)::int AS count
+           FROM orders
+           GROUP BY status`
+        ),
+        pool.query(
+          `SELECT id, name, slug, sku, stock
+           FROM products
+           WHERE active = true AND stock <= 10
+           ORDER BY stock ASC`
+        ),
+      ]);
 
     return {
       revenue: {
@@ -662,6 +677,14 @@ export default async function adminRoutes(fastify) {
         month: {
           total_cents: monthRevenue.rows[0].total_cents,
           orders: monthRevenue.rows[0].count,
+        },
+        quarter: {
+          total_cents: quarterRevenue.rows[0].total_cents,
+          orders: quarterRevenue.rows[0].count,
+        },
+        year: {
+          total_cents: yearRevenue.rows[0].total_cents,
+          orders: yearRevenue.rows[0].count,
         },
       },
       orders_by_status: Object.fromEntries(
@@ -1022,28 +1045,98 @@ export default async function adminRoutes(fastify) {
   fastify.get("/admin/stats/chart", async (request, reply) => {
     if (!checkAdmin(request, reply)) return;
 
-    const days = Math.min(
-      365,
-      Math.max(1, parseInt(String(request.query.days || "30"), 10) || 30)
-    );
+    const periodRaw = String(request.query?.period || "month").toLowerCase();
+    const period = ["day", "month", "quarter", "year"].includes(periodRaw)
+      ? periodRaw
+      : "month";
 
-    const revenueChart = await pool.query(
-      `SELECT
-         d::date AS date,
-         COALESCE(COUNT(o.id), 0)::int AS orders,
-         COALESCE(SUM(o.total_cents), 0)::int AS revenue_cents
-       FROM generate_series(
-         (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')::date - ($1::int - 1),
-         (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')::date,
-         '1 day'::interval
-       ) d
-       LEFT JOIN orders o
-         ON (o.created_at AT TIME ZONE 'Europe/Paris')::date = d::date
-         AND o.status IN ${PAID_STATUSES}
-       GROUP BY d::date
-       ORDER BY d::date ASC`,
-      [days]
-    );
+    let revenueChart;
+    let topSinceExpr;
+
+    if (period === "day") {
+      revenueChart = await pool.query(
+        `SELECT
+           date_trunc('hour', h) AS date,
+           COALESCE(COUNT(o.id), 0)::int AS orders,
+           COALESCE(SUM(o.total_cents), 0)::int AS revenue_cents
+         FROM generate_series(
+           date_trunc('hour', CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')
+             - interval '23 hours',
+           date_trunc('hour', CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris'),
+           '1 hour'::interval
+         ) h
+         LEFT JOIN orders o
+           ON date_trunc('hour', o.created_at AT TIME ZONE 'Europe/Paris') = h
+           AND o.status IN ${PAID_STATUSES}
+         GROUP BY 1
+         ORDER BY 1 ASC`
+      );
+      topSinceExpr = `date_trunc('day', CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris') AT TIME ZONE 'Europe/Paris'`;
+    } else if (period === "quarter") {
+      revenueChart = await pool.query(
+        `SELECT
+           date_trunc('week', d)::date AS date,
+           COALESCE(COUNT(o.id), 0)::int AS orders,
+           COALESCE(SUM(o.total_cents), 0)::int AS revenue_cents
+         FROM generate_series(
+           (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')::date - 89,
+           (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')::date,
+           '1 day'::interval
+         ) d
+         LEFT JOIN orders o
+           ON (o.created_at AT TIME ZONE 'Europe/Paris')::date = d::date
+           AND o.status IN ${PAID_STATUSES}
+         GROUP BY date_trunc('week', d)::date
+         ORDER BY 1 ASC`
+      );
+      topSinceExpr = `((CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')::date - 89)::timestamp AT TIME ZONE 'Europe/Paris'`;
+    } else if (period === "year") {
+      revenueChart = await pool.query(
+        `SELECT
+           date_trunc('month', d)::date AS date,
+           COALESCE(COUNT(o.id), 0)::int AS orders,
+           COALESCE(SUM(o.total_cents), 0)::int AS revenue_cents
+         FROM generate_series(
+           date_trunc(
+             'month',
+             (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris') - interval '11 months'
+           ),
+           date_trunc('month', CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris'),
+           '1 month'::interval
+         ) d
+         LEFT JOIN orders o
+           ON date_trunc('month', o.created_at AT TIME ZONE 'Europe/Paris')
+              = date_trunc('month', d)
+           AND o.status IN ${PAID_STATUSES}
+         GROUP BY date_trunc('month', d)::date
+         ORDER BY 1 ASC`
+      );
+      topSinceExpr = `((CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')::date - 364)::timestamp AT TIME ZONE 'Europe/Paris'`;
+    } else {
+      // month — 30 derniers jours
+      const days = Math.min(
+        365,
+        Math.max(1, parseInt(String(request.query.days || "30"), 10) || 30)
+      );
+      revenueChart = await pool.query(
+        `SELECT
+           d::date AS date,
+           COALESCE(COUNT(o.id), 0)::int AS orders,
+           COALESCE(SUM(o.total_cents), 0)::int AS revenue_cents
+         FROM generate_series(
+           (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')::date - ($1::int - 1),
+           (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris')::date,
+           '1 day'::interval
+         ) d
+         LEFT JOIN orders o
+           ON (o.created_at AT TIME ZONE 'Europe/Paris')::date = d::date
+           AND o.status IN ${PAID_STATUSES}
+         GROUP BY d::date
+         ORDER BY d::date ASC`,
+        [days]
+      );
+      topSinceExpr = `date_trunc('month', CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris') AT TIME ZONE 'Europe/Paris'`;
+    }
 
     const topProducts = await pool.query(
       `SELECT
@@ -1051,22 +1144,22 @@ export default async function adminRoutes(fastify) {
          SUM(COALESCE((item->>'quantity')::int, 1))::int AS qty
        FROM orders,
          jsonb_array_elements(items) AS item
-       WHERE created_at >= date_trunc(
-               'month',
-               CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Paris'
-             ) AT TIME ZONE 'Europe/Paris'
+       WHERE created_at >= ${topSinceExpr}
          AND status IN ${PAID_STATUSES}
        GROUP BY COALESCE(item->>'name', 'Produit')
        ORDER BY qty DESC
        LIMIT 5`
     );
 
+    const formatDate = (value) => {
+      if (value instanceof Date) return value.toISOString();
+      return String(value);
+    };
+
     return {
+      period,
       revenue_chart: revenueChart.rows.map((r) => ({
-        date:
-          r.date instanceof Date
-            ? r.date.toISOString().slice(0, 10)
-            : String(r.date).slice(0, 10),
+        date: formatDate(r.date).slice(0, period === "day" ? 16 : 10),
         orders: Number(r.orders) || 0,
         revenue: Math.round((Number(r.revenue_cents) || 0) / 100),
       })),

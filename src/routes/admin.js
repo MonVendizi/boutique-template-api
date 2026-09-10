@@ -274,6 +274,17 @@ export default async function adminRoutes(fastify) {
     if (!checkAdmin(request, reply)) {
       return reply;
     }
+
+    // Suivi Vendizi : dernière connexion admin (non bloquant)
+    pool
+      .query(
+        `
+      INSERT INTO brand_settings (key, value, type, category, label)
+      VALUES ('last_admin_login', NOW()::text, 'string', 'system', 'Dernière connexion admin')
+      ON CONFLICT (key) DO UPDATE SET value = NOW()::text
+    `,
+      )
+      .catch(() => {});
   });
 
   // ─── Produits : catalogue ───

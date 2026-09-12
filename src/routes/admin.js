@@ -11,6 +11,7 @@ import {
 import { getSettings, setSettings } from "../lib/settings.js";
 import { createReferralForCustomer } from "./referrals.js";
 import { BetaAnalyticsDataClient } from "@google-analytics/data";
+import { checkAdmin, resolveValidAdminPassword } from "../lib/adminAuth.js";
 
 const __adminDir = path.dirname(fileURLToPath(import.meta.url));
 const __apiRoot = path.join(__adminDir, "../..");
@@ -27,22 +28,6 @@ const VALID_ORDER_STATUSES = [
 
 /** Statuts comptabilisés dans les KPI CA / graphiques */
 const PAID_STATUSES = "('paid', 'preparation', 'shipped', 'delivered')";
-
-function checkAdmin(request, reply) {
-  const password = request.headers["x-admin-password"];
-
-  if (!process.env.ADMIN_PASSWORD) {
-    reply.code(500).send({ error: "ADMIN_PASSWORD non configuré" });
-    return false;
-  }
-
-  if (password !== process.env.ADMIN_PASSWORD) {
-    reply.code(401).send({ error: "Non autorisé" });
-    return false;
-  }
-
-  return true;
-}
 
 function getAnalyticsClient() {
   // Prefer ADC file path (GOOGLE_APPLICATION_CREDENTIALS)
@@ -271,7 +256,7 @@ async function setOrderStatus(id, status, reply, extras = {}) {
 
 export default async function adminRoutes(fastify) {
   fastify.addHook("preHandler", async (request, reply) => {
-    if (!checkAdmin(request, reply)) {
+    if (!(await checkAdmin(request, reply))) {
       return reply;
     }
 
@@ -707,7 +692,7 @@ export default async function adminRoutes(fastify) {
 
   // ─── Analytics (GA4 Data API) ───
   fastify.get("/admin/analytics", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return reply;
+    if (!(await checkAdmin(request, reply))) return reply;
 
     const periodRaw = String(request.query?.period || "30d");
     const period = ["7d", "30d", "90d"].includes(periodRaw) ? periodRaw : "30d";
@@ -825,7 +810,7 @@ export default async function adminRoutes(fastify) {
 
   // GET /admin/analytics/realtime — visiteurs actifs + stats du jour
   fastify.get("/admin/analytics/realtime", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return reply;
+    if (!(await checkAdmin(request, reply))) return reply;
 
     const propertyId = process.env.GA4_PROPERTY_ID;
     if (!propertyId || !hasGaCredentials()) {
@@ -866,7 +851,7 @@ export default async function adminRoutes(fastify) {
 
   // GET /admin/export/orders?from=2026-01-01&to=2026-12-31
   fastify.get("/admin/export/orders", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
 
     const { from, to } = request.query || {};
     const fromDate = from || "2000-01-01";
@@ -944,7 +929,7 @@ export default async function adminRoutes(fastify) {
 
   /** Liste des paniers abandonnés */
   fastify.get("/admin/abandoned-carts", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
 
     const { rows } = await pool.query(
       `SELECT
@@ -972,7 +957,7 @@ export default async function adminRoutes(fastify) {
 
   /** Clients inactifs (pas de commande depuis N jours) */
   fastify.get("/admin/inactive-customers", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
 
     const days = Math.min(
       365,
@@ -1009,7 +994,7 @@ export default async function adminRoutes(fastify) {
 
   /** Relancer des clients inactifs par email */
   fastify.post("/admin/inactive-customers/remind", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
 
     const emails = Array.isArray(request.body?.emails)
       ? request.body.emails
@@ -1054,7 +1039,7 @@ export default async function adminRoutes(fastify) {
 
   /** Données graphiques KPI dashboard */
   fastify.get("/admin/stats/chart", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
 
     const periodRaw = String(request.query?.period || "month").toLowerCase();
     const period = ["day", "month", "quarter", "year"].includes(periodRaw)
@@ -1181,14 +1166,45 @@ export default async function adminRoutes(fastify) {
     };
   });
 
+  /** Changer le mot de passe admin */
+  fastify.put("/admin/password", async (request, reply) => {
+    const body = request.body || {};
+    const currentPassword = String(body.currentPassword || "");
+    const newPassword = String(body.newPassword || "");
+
+    const validPassword = await resolveValidAdminPassword();
+    if (!validPassword || currentPassword !== validPassword) {
+      return reply
+        .code(401)
+        .send({ error: "Mot de passe actuel incorrect" });
+    }
+
+    if (!newPassword || newPassword.length < 8) {
+      return reply
+        .code(400)
+        .send({ error: "Le mot de passe doit faire au moins 8 caractères" });
+    }
+
+    await pool.query(
+      `
+      INSERT INTO brand_settings (key, value, type, category, label)
+      VALUES ('admin_password_override', $1, 'string', 'security', 'Mot de passe admin')
+      ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()
+    `,
+      [newPassword]
+    );
+
+    return { success: true, message: "Mot de passe mis à jour" };
+  });
+
   /** Paramètres boutique (admin) */
   fastify.get("/admin/settings", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
     return getSettings();
   });
 
   fastify.put("/admin/settings", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
     const body = request.body || {};
     const updates = {};
     if (body.google_review_url !== undefined) {
@@ -1214,7 +1230,7 @@ export default async function adminRoutes(fastify) {
 
   /** Initialise une nouvelle base Railway client (schema + brand + variants) */
   fastify.post("/admin/migrate", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
     try {
       const schemaPath = path.join(__adminDir, "../db/schema.sql");
       const schemaSql = fs.readFileSync(schemaPath, "utf8");

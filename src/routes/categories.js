@@ -1,23 +1,8 @@
 import pool from "../db/pool.js";
+import { checkAdmin } from "../lib/adminAuth.js";
 
 /** Nombre max de groupes affichés directement dans la nav (sort_order 1–4). */
 export const NAV_MAIN_GROUP_LIMIT = 3;
-
-function checkAdmin(request, reply) {
-  const password = request.headers["x-admin-password"];
-
-  if (!process.env.ADMIN_PASSWORD) {
-    reply.code(500).send({ error: "ADMIN_PASSWORD non configuré" });
-    return false;
-  }
-
-  if (password !== process.env.ADMIN_PASSWORD) {
-    reply.code(401).send({ error: "Non autorisé" });
-    return false;
-  }
-
-  return true;
-}
 
 function toSlug(name) {
   return String(name || "")
@@ -122,13 +107,13 @@ export default async function categoriesRoutes(fastify) {
   });
 
   fastify.get("/admin/categories", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
     const { rows } = await pool.query(CATEGORY_LIST_SQL);
     return rows;
   });
 
   fastify.post("/admin/categories", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
     const body = request.body || {};
     const name = String(body.name || "").trim();
     const slug = String(body.slug || toSlug(name)).trim();
@@ -167,7 +152,7 @@ export default async function categoriesRoutes(fastify) {
   });
 
   fastify.put("/admin/categories/:id", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
     const id = Number(request.params.id);
     if (!Number.isFinite(id)) {
       return reply.code(400).send({ error: "ID invalide" });
@@ -232,7 +217,7 @@ export default async function categoriesRoutes(fastify) {
   });
 
   fastify.put("/admin/categories/:id/reorder", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
     const id = Number(request.params.id);
     const direction = request.body?.direction === "down" ? "down" : "up";
 
@@ -283,7 +268,7 @@ export default async function categoriesRoutes(fastify) {
   });
 
   fastify.delete("/admin/categories/:id", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
     const id = Number(request.params.id);
     if (!Number.isFinite(id)) {
       return reply.code(400).send({ error: "ID invalide" });
@@ -302,7 +287,7 @@ export default async function categoriesRoutes(fastify) {
   });
 
   fastify.put("/admin/categories/:id/reactivate", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
     const id = Number(request.params.id);
     if (!Number.isFinite(id)) {
       return reply.code(400).send({ error: "ID invalide" });
@@ -321,7 +306,7 @@ export default async function categoriesRoutes(fastify) {
   });
 
   fastify.delete("/admin/categories/:id/permanent", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
     const id = Number(request.params.id);
     if (!Number.isFinite(id)) {
       return reply.code(400).send({ error: "ID invalide" });
@@ -355,7 +340,7 @@ export default async function categoriesRoutes(fastify) {
   });
 
   fastify.get("/admin/nav-groups", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
     const { rows } = await pool.query(NAV_GROUP_LIST_SQL);
     return rows.map((row, index) => ({
       ...row,
@@ -364,7 +349,7 @@ export default async function categoriesRoutes(fastify) {
   });
 
   fastify.post("/admin/nav-groups", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
     const name = String(request.body?.name || "").trim();
     if (!name) {
       return reply.code(400).send({ error: "Nom requis" });
@@ -395,7 +380,7 @@ export default async function categoriesRoutes(fastify) {
   });
 
   fastify.put("/admin/nav-groups/:id", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
     const id = Number(request.params.id);
     const name = String(request.body?.name || "").trim();
 
@@ -449,7 +434,7 @@ export default async function categoriesRoutes(fastify) {
   });
 
   fastify.delete("/admin/nav-groups/:id", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
     const id = Number(request.params.id);
     if (!Number.isFinite(id)) {
       return reply.code(400).send({ error: "ID invalide" });
@@ -475,7 +460,7 @@ export default async function categoriesRoutes(fastify) {
   });
 
   fastify.put("/admin/nav-groups/:id/reorder", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
     const id = Number(request.params.id);
     const direction = request.body?.direction === "down" ? "down" : "up";
 

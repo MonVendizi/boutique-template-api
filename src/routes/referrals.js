@@ -3,22 +3,7 @@ import {
   sendReferralInviteEmail,
   sendReferralRewardEmail,
 } from "../lib/email.js";
-
-function checkAdmin(request, reply) {
-  const password = request.headers["x-admin-password"];
-
-  if (!process.env.ADMIN_PASSWORD) {
-    reply.code(500).send({ error: "ADMIN_PASSWORD non configuré" });
-    return false;
-  }
-
-  if (password !== process.env.ADMIN_PASSWORD) {
-    reply.code(401).send({ error: "Non autorisé" });
-    return false;
-  }
-
-  return true;
-}
+import { checkAdmin } from "../lib/adminAuth.js";
 
 export function normalizeReferralCode(code) {
   return String(code || "")
@@ -339,13 +324,13 @@ export default async function referralsRoutes(fastify) {
   });
 
   fastify.get("/admin/referral/config", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
     const { rows } = await pool.query(`SELECT * FROM referral_config WHERE id = 1`);
     return rows[0] || { id: 1, active: false };
   });
 
   fastify.put("/admin/referral/config", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
     const body = request.body || {};
 
     const { rows } = await pool.query(
@@ -375,7 +360,7 @@ export default async function referralsRoutes(fastify) {
   });
 
   fastify.get("/admin/referrals", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
 
     const { rows: referrals } = await pool.query(
       `SELECT r.*, o.total_cents AS order_total_cents

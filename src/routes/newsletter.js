@@ -5,6 +5,7 @@ import {
 } from "../lib/email.js";
 import { getLoyaltyConfig } from "./loyalty.js";
 import { isBotEmail } from "../lib/botEmail.js";
+import { checkAdmin } from "../lib/adminAuth.js";
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "https://maboutique.fr";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -28,22 +29,6 @@ function checkSubscribeRateLimit(request, reply) {
   }
 
   ipAttempts.set(ip, { ...attempts, count: attempts.count + 1 });
-  return true;
-}
-
-function checkAdmin(request, reply) {
-  const password = request.headers["x-admin-password"];
-
-  if (!process.env.ADMIN_PASSWORD) {
-    reply.code(500).send({ error: "ADMIN_PASSWORD non configuré" });
-    return false;
-  }
-
-  if (password !== process.env.ADMIN_PASSWORD) {
-    reply.code(401).send({ error: "Non autorisé" });
-    return false;
-  }
-
   return true;
 }
 
@@ -166,7 +151,7 @@ export default async function newsletterRoutes(fastify) {
 
   // ─── Admin ───
   fastify.get("/admin/newsletter/subscribers", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return reply;
+    if (!(await checkAdmin(request, reply))) return reply;
 
     const { rows } = await pool.query(
       `SELECT id, email, source, active, created_at, unsubscribed_at
@@ -182,7 +167,7 @@ export default async function newsletterRoutes(fastify) {
   });
 
   fastify.post("/admin/newsletter/send", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return reply;
+    if (!(await checkAdmin(request, reply))) return reply;
 
     const {
       subject,

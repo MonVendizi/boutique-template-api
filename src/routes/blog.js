@@ -1,20 +1,5 @@
 import pool from "../db/pool.js";
-
-function checkAdmin(request, reply) {
-  const password = request.headers["x-admin-password"];
-
-  if (!process.env.ADMIN_PASSWORD) {
-    reply.code(500).send({ error: "ADMIN_PASSWORD non configuré" });
-    return false;
-  }
-
-  if (password !== process.env.ADMIN_PASSWORD) {
-    reply.code(401).send({ error: "Non autorisé" });
-    return false;
-  }
-
-  return true;
-}
+import { checkAdmin, resolveValidAdminPassword } from "../lib/adminAuth.js";
 
 function normalizePost(body = {}) {
   return {
@@ -66,9 +51,10 @@ export default async function blogRoutes(fastify) {
   // Public + aperçu admin (header x-admin-password)
   fastify.get("/blog/:slug", async (request, reply) => {
     const { slug } = request.params;
-    const preview =
-      Boolean(process.env.ADMIN_PASSWORD) &&
-      request.headers["x-admin-password"] === process.env.ADMIN_PASSWORD;
+    const valid = await resolveValidAdminPassword();
+    const isAdmin =
+      Boolean(valid) && request.headers["x-admin-password"] === valid;
+    const preview = isAdmin;
 
     const { rows } = await pool.query(
       preview
@@ -90,7 +76,7 @@ export default async function blogRoutes(fastify) {
 
   // ─── Admin ───
   fastify.get("/admin/blog", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return reply;
+    if (!(await checkAdmin(request, reply))) return reply;
     const { rows } = await pool.query(
       `SELECT * FROM blog_posts
        WHERE status != 'archived'
@@ -100,7 +86,7 @@ export default async function blogRoutes(fastify) {
   });
 
   fastify.post("/admin/blog", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return reply;
+    if (!(await checkAdmin(request, reply))) return reply;
     const p = normalizePost(request.body);
 
     if (!p.title || !p.slug) {
@@ -153,7 +139,7 @@ export default async function blogRoutes(fastify) {
   });
 
   fastify.put("/admin/blog/:id", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return reply;
+    if (!(await checkAdmin(request, reply))) return reply;
     const p = normalizePost(request.body);
     const { id } = request.params;
 
@@ -220,7 +206,7 @@ export default async function blogRoutes(fastify) {
   });
 
   fastify.delete("/admin/blog/:id", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return reply;
+    if (!(await checkAdmin(request, reply))) return reply;
     const { rows } = await pool.query(
       `UPDATE blog_posts SET status = 'archived', updated_at = NOW()
        WHERE id = $1 RETURNING id`,
@@ -233,7 +219,7 @@ export default async function blogRoutes(fastify) {
   });
 
   fastify.put("/admin/blog/:id/publish", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return reply;
+    if (!(await checkAdmin(request, reply))) return reply;
     try {
       const { rows } = await pool.query(
         `UPDATE blog_posts
@@ -256,7 +242,7 @@ export default async function blogRoutes(fastify) {
   });
 
   fastify.put("/admin/blog/:id/unpublish", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return reply;
+    if (!(await checkAdmin(request, reply))) return reply;
     try {
       const { rows } = await pool.query(
         `UPDATE blog_posts

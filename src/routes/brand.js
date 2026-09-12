@@ -1,20 +1,5 @@
 import pool from "../db/pool.js";
-
-function checkAdmin(request, reply) {
-  const password = request.headers["x-admin-password"];
-
-  if (!process.env.ADMIN_PASSWORD) {
-    reply.code(500).send({ error: "ADMIN_PASSWORD non configuré" });
-    return false;
-  }
-
-  if (password !== process.env.ADMIN_PASSWORD) {
-    reply.code(401).send({ error: "Non autorisé" });
-    return false;
-  }
-
-  return true;
-}
+import { checkAdmin } from "../lib/adminAuth.js";
 
 export default async function brandRoutes(fastify) {
   fastify.get("/brand/settings", async () => {
@@ -41,7 +26,7 @@ export default async function brandRoutes(fastify) {
   });
 
   fastify.get("/admin/brand/settings", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return reply;
+    if (!(await checkAdmin(request, reply))) return reply;
     const result = await pool.query(
       `SELECT * FROM brand_settings ORDER BY category, key`
     );
@@ -49,7 +34,7 @@ export default async function brandRoutes(fastify) {
   });
 
   fastify.put("/admin/brand/settings", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return reply;
+    if (!(await checkAdmin(request, reply))) return reply;
     const updates = request.body;
 
     for (const [key, value] of Object.entries(updates)) {

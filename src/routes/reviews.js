@@ -1,26 +1,11 @@
 import pool from "../db/pool.js";
+import { checkAdmin } from "../lib/adminAuth.js";
 import { sendGoogleReviewRequestEmail } from "../lib/email.js";
 import { getGoogleReviewUrl } from "../lib/settings.js";
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "https://maboutique.fr";
 const BRAND_NAME = process.env.BRAND_NAME || "Ma Boutique";
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@maboutique.fr";
-
-function checkAdmin(request, reply) {
-  const password = request.headers["x-admin-password"];
-
-  if (!process.env.ADMIN_PASSWORD) {
-    reply.code(500).send({ error: "ADMIN_PASSWORD non configuré" });
-    return false;
-  }
-
-  if (password !== process.env.ADMIN_PASSWORD) {
-    reply.code(401).send({ error: "Non autorisé" });
-    return false;
-  }
-
-  return true;
-}
 
 function publicReview(row) {
   return {
@@ -170,7 +155,7 @@ export default async function reviewsRoutes(fastify) {
 
   // ─── Admin ───
   fastify.get("/admin/reviews", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return reply;
+    if (!(await checkAdmin(request, reply))) return reply;
     const status = request.query?.status
       ? String(request.query.status)
       : null;
@@ -208,7 +193,7 @@ export default async function reviewsRoutes(fastify) {
   });
 
   fastify.put("/admin/reviews/:id/approve", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return reply;
+    if (!(await checkAdmin(request, reply))) return reply;
     try {
       const { rows } = await pool.query(
         `UPDATE reviews
@@ -248,7 +233,7 @@ export default async function reviewsRoutes(fastify) {
   });
 
   fastify.put("/admin/reviews/:id/reject", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return reply;
+    if (!(await checkAdmin(request, reply))) return reply;
     try {
       const { rows } = await pool.query(
         `UPDATE reviews
@@ -270,7 +255,7 @@ export default async function reviewsRoutes(fastify) {
   });
 
   fastify.delete("/admin/reviews/:id", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return reply;
+    if (!(await checkAdmin(request, reply))) return reply;
     const { rows } = await pool.query(
       `DELETE FROM reviews WHERE id = $1 RETURNING id`,
       [request.params.id]

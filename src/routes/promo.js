@@ -1,20 +1,5 @@
 import pool from "../db/pool.js";
-
-function checkAdmin(request, reply) {
-  const password = request.headers["x-admin-password"];
-
-  if (!process.env.ADMIN_PASSWORD) {
-    reply.code(500).send({ error: "ADMIN_PASSWORD non configuré" });
-    return false;
-  }
-
-  if (password !== process.env.ADMIN_PASSWORD) {
-    reply.code(401).send({ error: "Non autorisé" });
-    return false;
-  }
-
-  return true;
-}
+import { checkAdmin } from "../lib/adminAuth.js";
 
 function normalizeCode(code) {
   return String(code || "")
@@ -120,7 +105,7 @@ export default async function promoRoutes(fastify) {
   });
 
   fastify.get("/admin/promo", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
     const { rows } = await pool.query(
       `SELECT * FROM promo_codes ORDER BY created_at DESC`
     );
@@ -128,7 +113,7 @@ export default async function promoRoutes(fastify) {
   });
 
   fastify.post("/admin/promo", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
     const body = request.body || {};
     const code = normalizeCode(body.code);
     const type = body.type === "fixed" ? "fixed" : body.type === "percent" ? "percent" : null;
@@ -194,7 +179,7 @@ export default async function promoRoutes(fastify) {
   });
 
   fastify.put("/admin/promo/:id", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
     const id = Number(request.params.id);
     if (!Number.isFinite(id)) {
       return reply.code(400).send({ error: "ID invalide" });
@@ -271,7 +256,7 @@ export default async function promoRoutes(fastify) {
   });
 
   fastify.delete("/admin/promo/:id", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
     const id = Number(request.params.id);
     if (!Number.isFinite(id)) {
       return reply.code(400).send({ error: "ID invalide" });

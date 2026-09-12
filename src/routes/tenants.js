@@ -1,24 +1,9 @@
 import pool from "../db/pool.js";
+import { checkAdmin } from "../lib/adminAuth.js";
 
 const CACHE_TTL_MS = 60_000;
 /** @type {Map<string, { data: object; expires: number }>} */
 const lookupCache = new Map();
-
-function checkAdmin(request, reply) {
-  const password = request.headers["x-admin-password"];
-
-  if (!process.env.ADMIN_PASSWORD) {
-    reply.code(500).send({ error: "ADMIN_PASSWORD non configuré" });
-    return false;
-  }
-
-  if (password !== process.env.ADMIN_PASSWORD) {
-    reply.code(401).send({ error: "Non autorisé" });
-    return false;
-  }
-
-  return true;
-}
 
 function normalizeDomain(domain) {
   return String(domain || "")
@@ -76,7 +61,7 @@ export default async function tenantsRoutes(fastify) {
   });
 
   fastify.get("/admin/tenants", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
     const { rows } = await pool.query(
       `SELECT id, domain, api_url, brand_name, active, created_at, updated_at
        FROM tenants
@@ -86,7 +71,7 @@ export default async function tenantsRoutes(fastify) {
   });
 
   fastify.post("/admin/tenants", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
 
     const body = request.body || {};
     const domain = normalizeDomain(body.domain);
@@ -118,7 +103,7 @@ export default async function tenantsRoutes(fastify) {
   });
 
   fastify.put("/admin/tenants/:id", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
 
     const { id } = request.params;
     const body = request.body || {};
@@ -187,7 +172,7 @@ export default async function tenantsRoutes(fastify) {
 
   // Soft-delete : désactive le tenant
   fastify.delete("/admin/tenants/:id", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
 
     const { id } = request.params;
     const { rows } = await pool.query(

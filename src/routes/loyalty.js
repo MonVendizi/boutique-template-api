@@ -2,22 +2,7 @@ import pool from "../db/pool.js";
 import {
   sendLoyaltyRewardEmail,
 } from "../lib/email.js";
-
-function checkAdmin(request, reply) {
-  const password = request.headers["x-admin-password"];
-
-  if (!process.env.ADMIN_PASSWORD) {
-    reply.code(500).send({ error: "ADMIN_PASSWORD non configuré" });
-    return false;
-  }
-
-  if (password !== process.env.ADMIN_PASSWORD) {
-    reply.code(401).send({ error: "Non autorisé" });
-    return false;
-  }
-
-  return true;
-}
+import { checkAdmin } from "../lib/adminAuth.js";
 
 function normalizeEmail(email) {
   return String(email || "")
@@ -240,7 +225,7 @@ export default async function loyaltyRoutes(fastify) {
 
   /** Admin — liste clients */
   fastify.get("/admin/loyalty", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
 
     const { rows } = await pool.query(
       `SELECT id, email, customer_name, points, total_earned, total_redeemed,
@@ -276,13 +261,13 @@ export default async function loyaltyRoutes(fastify) {
 
   /** Admin — config complète */
   fastify.get("/admin/loyalty/config", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
     return getLoyaltyConfig();
   });
 
   /** Admin — modifier config */
   fastify.put("/admin/loyalty/config", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
 
     const body = request.body || {};
     const active = Boolean(body.active);
@@ -323,7 +308,7 @@ export default async function loyaltyRoutes(fastify) {
 
   /** Admin — ajouter points manuellement */
   fastify.post("/admin/loyalty/add", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
 
     const body = request.body || {};
     const email = normalizeEmail(body.email);

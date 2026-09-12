@@ -1,20 +1,5 @@
 import pool from "../db/pool.js";
-
-function checkAdmin(request, reply) {
-  const password = request.headers["x-admin-password"];
-
-  if (!process.env.ADMIN_PASSWORD) {
-    reply.code(500).send({ error: "ADMIN_PASSWORD non configuré" });
-    return false;
-  }
-
-  if (password !== process.env.ADMIN_PASSWORD) {
-    reply.code(401).send({ error: "Non autorisé" });
-    return false;
-  }
-
-  return true;
-}
+import { checkAdmin } from "../lib/adminAuth.js";
 
 function parseDays(days, fallback = 30) {
   return Math.max(1, Math.min(365, Math.round(Number(days) || fallback)));
@@ -59,7 +44,7 @@ export default async function analyticsRoutes(fastify) {
   });
 
   fastify.get("/admin/analytics/behavior", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
 
     const page = normalizePage(request.query?.page);
     if (!page) {
@@ -122,7 +107,7 @@ export default async function analyticsRoutes(fastify) {
   });
 
   fastify.get("/admin/analytics/funnel", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
 
     const days = parseDays(request.query?.days);
     const pages = ["/boutique", "/commander", "/commande-confirmee"];

@@ -1,22 +1,7 @@
 import crypto from "crypto";
 import pool from "../db/pool.js";
 import { sendAffiliateRecapEmail } from "../lib/email.js";
-
-function checkAdmin(request, reply) {
-  const password = request.headers["x-admin-password"];
-
-  if (!process.env.ADMIN_PASSWORD) {
-    reply.code(500).send({ error: "ADMIN_PASSWORD non configuré" });
-    return false;
-  }
-
-  if (password !== process.env.ADMIN_PASSWORD) {
-    reply.code(401).send({ error: "Non autorisé" });
-    return false;
-  }
-
-  return true;
-}
+import { checkAdmin } from "../lib/adminAuth.js";
 
 function normalizeCode(code) {
   return String(code || "")
@@ -115,7 +100,7 @@ export default async function affiliatesRoutes(fastify) {
 
   /** Liste admin + stats globales */
   fastify.get("/admin/affiliates", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
 
     const { rows } = await pool.query(
       `SELECT * FROM affiliates
@@ -141,7 +126,7 @@ export default async function affiliatesRoutes(fastify) {
 
   /** Créer un affilié */
   fastify.post("/admin/affiliates", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
 
     const body = request.body || {};
     const name = String(body.name || "").trim().slice(0, 100);
@@ -180,7 +165,7 @@ export default async function affiliatesRoutes(fastify) {
 
   /** Modifier un affilié */
   fastify.put("/admin/affiliates/:id", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
 
     const body = request.body || {};
     const name = String(body.name || "").trim().slice(0, 100);
@@ -228,7 +213,7 @@ export default async function affiliatesRoutes(fastify) {
 
   /** Suppression définitive */
   fastify.delete("/admin/affiliates/:id", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
 
     const { rowCount } = await pool.query(
       `DELETE FROM affiliates WHERE id = $1`,
@@ -242,7 +227,7 @@ export default async function affiliatesRoutes(fastify) {
 
   /** Marquer commission payée */
   fastify.put("/admin/affiliates/:id/pay", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
 
     const amountCents = Math.max(
       0,
@@ -278,7 +263,7 @@ export default async function affiliatesRoutes(fastify) {
 
   /** Envoyer récapitulatif email */
   fastify.post("/admin/affiliates/:id/recap", async (request, reply) => {
-    if (!checkAdmin(request, reply)) return;
+    if (!(await checkAdmin(request, reply))) return;
 
     const { rows } = await pool.query(
       `SELECT * FROM affiliates WHERE id = $1`,

@@ -170,24 +170,39 @@ export default async function tenantsRoutes(fastify) {
     }
   });
 
-  // Soft-delete : désactive le tenant
-  fastify.delete("/admin/tenants/:id", async (request, reply) => {
+  // Hard-delete : id UUID ou domaine
+  fastify.delete("/admin/tenants/:idOrDomain", async (request, reply) => {
     if (!(await checkAdmin(request, reply))) return;
 
-    const { id } = request.params;
-    const { rows } = await pool.query(
-      `UPDATE tenants
-       SET active = false, updated_at = NOW()
-       WHERE id = $1
-       RETURNING id, domain, api_url, brand_name, active, created_at, updated_at`,
-      [id]
-    );
+    const idOrDomain = String(request.params.idOrDomain || "").trim();
+    if (!idOrDomain) {
+      return reply.code(400).send({ error: "id ou domain requis" });
+    }
+
+    const isUuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        idOrDomain
+      );
+
+    const { rows } = isUuid
+      ? await pool.query(
+          `DELETE FROM tenants
+           WHERE id = $1
+           RETURNING id, domain, api_url, brand_name, active, created_at, updated_at`,
+          [idOrDomain]
+        )
+      : await pool.query(
+          `DELETE FROM tenants
+           WHERE domain = $1
+           RETURNING id, domain, api_url, brand_name, active, created_at, updated_at`,
+          [normalizeDomain(idOrDomain)]
+        );
 
     if (!rows.length) {
       return reply.code(404).send({ error: "Tenant introuvable" });
     }
 
     invalidateLookupCache(rows[0].domain);
-    return rows[0];
+    return { success: true, deleted: rows[0] };
   });
 }

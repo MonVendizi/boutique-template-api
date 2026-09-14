@@ -7,6 +7,7 @@ import {
   sendOrderPreparationEmail,
   sendOrderShippedEmail,
   sendInactiveCustomerEmail,
+  sendPartnerChangeNotification,
 } from "../lib/email.js";
 import { getSettings, setSettings } from "../lib/settings.js";
 import { createReferralForCustomer } from "./referrals.js";
@@ -1203,6 +1204,21 @@ export default async function adminRoutes(fastify) {
     }
 
     return { success: true };
+  });
+
+  /** Notifie Vendizi d'une demande partenaire (activation / désactivation) */
+  fastify.post("/admin/notify-partner-change", async (request, reply) => {
+    if (!(await checkAdmin(request, reply))) return;
+    const { brand, enabled, placement } = request.body || {};
+    try {
+      await sendPartnerChangeNotification({ brand, enabled, placement });
+      return { success: true };
+    } catch (error) {
+      request.log.error(error);
+      return reply
+        .code(500)
+        .send({ error: "Erreur envoi notification partenaire" });
+    }
   });
 
   /** Changer le mot de passe admin */

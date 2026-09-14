@@ -1724,3 +1724,27 @@ export async function sendInactiveCustomerEmail({
     brand,
   });
 }
+
+/** Notifie Vendizi d'un changement programme partenaire (demande client boutique) */
+export async function sendPartnerChangeNotification({
+  brand,
+  enabled,
+  placement,
+}) {
+  const settings = await getBrandSettings();
+  const brandLabel = brand === "jourx" ? "JourX" : "TinaLuxe";
+
+  return sendBrandedEmail({
+    to: "contact@vendizi.fr",
+    subject: `🤝 Demande partenaire — ${settings.brandName}`,
+    html: `
+      <h2>Changement Programme Partenaire</h2>
+      <p><strong>Boutique :</strong> ${escapeHtml(settings.brandName)}</p>
+      <p><strong>Marque :</strong> ${escapeHtml(brandLabel)}</p>
+      <p><strong>Action :</strong> ${enabled ? "Activation" : "Désactivation"}</p>
+      <p><strong>Placement :</strong> ${escapeHtml(String(placement || ""))}</p>
+      <p><strong>Date :</strong> ${new Date().toLocaleDateString("fr-FR")}</p>
+      <p><a href="https://vendizi.fr/dashboard">→ Gérer dans le dashboard Vendizi</a></p>
+    `,
+  });
+}

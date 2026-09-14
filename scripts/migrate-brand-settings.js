@@ -153,10 +153,10 @@ const defaults = [
   ["partner_jourx_enabled", "false", "boolean", "partner", "Pub JourX activée"],
   [
     "partner_jourx_placement",
-    "footer",
+    "cart",
     "string",
     "partner",
-    "Placement pub JourX : footer | sidebar",
+    "Placement pub JourX : cart | confirmation | not_found | all",
   ],
   [
     "partner_tinaluxe_enabled",
@@ -167,10 +167,10 @@ const defaults = [
   ],
   [
     "partner_tinaluxe_placement",
-    "footer",
+    "cart",
     "string",
     "partner",
-    "Placement pub TinaLuxe : footer | sidebar",
+    "Placement pub TinaLuxe : cart | confirmation | not_found | all",
   ],
   [
     "partner_category_conflict",
@@ -205,6 +205,32 @@ for (const [key, value, type, category, label] of defaults) {
     [key, value, type, category, label]
   );
 }
+
+// Migration placements partenaire footer/sidebar → cart
+await pool.query(`
+  UPDATE brand_settings
+  SET value = 'cart',
+      label = 'Placement pub JourX : cart | confirmation | not_found | all'
+  WHERE key = 'partner_jourx_placement'
+    AND value IN ('footer', 'sidebar');
+`);
+await pool.query(`
+  UPDATE brand_settings
+  SET value = 'cart',
+      label = 'Placement pub TinaLuxe : cart | confirmation | not_found | all'
+  WHERE key = 'partner_tinaluxe_placement'
+    AND value IN ('footer', 'sidebar');
+`);
+await pool.query(`
+  UPDATE brand_settings
+  SET label = 'Placement pub JourX : cart | confirmation | not_found | all'
+  WHERE key = 'partner_jourx_placement';
+`);
+await pool.query(`
+  UPDATE brand_settings
+  SET label = 'Placement pub TinaLuxe : cart | confirmation | not_found | all'
+  WHERE key = 'partner_tinaluxe_placement';
+`);
 
 console.log("Migration brand_settings OK");
 await pool.end();

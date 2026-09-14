@@ -1181,9 +1181,9 @@ export default async function adminRoutes(fastify) {
 
     const updates = [
       ["partner_jourx_enabled", String(jourx_enabled ?? false)],
-      ["partner_jourx_placement", jourx_placement || "footer"],
+      ["partner_jourx_placement", jourx_placement || "cart"],
       ["partner_tinaluxe_enabled", String(tinaluxe_enabled ?? false)],
-      ["partner_tinaluxe_placement", tinaluxe_placement || "footer"],
+      ["partner_tinaluxe_placement", tinaluxe_placement || "cart"],
       ["partner_category_conflict", String(category_conflict ?? false)],
       ["partner_discount_amount", String(discount_amount ?? 0)],
       [

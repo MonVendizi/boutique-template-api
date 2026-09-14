@@ -53,6 +53,64 @@ function emailFrom(brand, prefix = "commande") {
   return `${brand.senderName} <${prefix}@${emailDomain(brand.replyTo)}>`;
 }
 
+/** Bloc HTML partenaire pour emails de confirmation commande */
+async function getPartnerEmailBlock() {
+  try {
+    const { rows } = await pool.query(`
+      SELECT key, value FROM brand_settings WHERE category = 'partner'
+    `);
+    const config = {};
+    for (const row of rows) config[row.key] = row.value;
+
+    const jourxEnabled = config.partner_jourx_enabled === "true";
+    const tinaluxeEnabled = config.partner_tinaluxe_enabled === "true";
+    if (!jourxEnabled && !tinaluxeEnabled) return "";
+
+    const showJourX =
+      jourxEnabled && tinaluxeEnabled
+        ? new Date().getDate() % 2 === 0
+        : jourxEnabled;
+    const showTinaLuxe =
+      jourxEnabled && tinaluxeEnabled
+        ? new Date().getDate() % 2 !== 0
+        : tinaluxeEnabled;
+
+    if (showJourX) {
+      return `
+        <div style="margin: 24px 0; padding: 16px 20px; background: #1A1A2E;
+                    border-radius: 8px; border-left: 4px solid #6C63FF; text-align: center;">
+          <p style="color: #EAEAEA; font-size: 13px; margin: 0 0 8px;">
+            💰 Vous venez de faire un achat — suivez votre budget avec
+          </p>
+          <a href="https://jourx.fr?utm_source=vendizi&utm_medium=email_confirmation&utm_campaign=partner"
+             style="color: #6C63FF; font-weight: 700; font-size: 14px; text-decoration: none;">
+            JourX, l'appli budget simple →
+          </a>
+        </div>
+      `;
+    }
+
+    if (showTinaLuxe) {
+      return `
+        <div style="margin: 24px 0; padding: 16px 20px; background: #1A0F00;
+                    border-radius: 8px; border-left: 4px solid #D4AF37; text-align: center;">
+          <p style="color: #F5F0E8; font-size: 13px; margin: 0 0 8px;">
+            ✨ Prenez soin de vous avec des cosmétiques naturels premium
+          </p>
+          <a href="https://tinaluxe.fr?utm_source=vendizi&utm_medium=email_confirmation&utm_campaign=partner"
+             style="color: #D4AF37; font-weight: 700; font-size: 14px; text-decoration: none;">
+            TinaLuxe, beauté naturelle →
+          </a>
+        </div>
+      `;
+    }
+
+    return "";
+  } catch {
+    return "";
+  }
+}
+
 function siteUrl(brand, path = "") {
   const base = brand.siteUrl.replace(/\/$/, "");
   if (!path) return base;
@@ -340,6 +398,7 @@ export async function sendOrderConfirmationEmail({
       ? formatPrice(total, currency)
       : escapeHtml(String(total));
   const idShort = shortOrderId(orderId);
+  const partnerBlock = await getPartnerEmailBlock();
 
   const loyaltyHtml =
     loyalty && loyalty.pointsEarned > 0
@@ -371,6 +430,7 @@ export async function sendOrderConfirmationEmail({
       Votre commande est en cours de préparation. Vous recevrez un email dès qu'elle sera expédiée.
     </p>
     ${loyaltyHtml}
+    ${partnerBlock}
   `;
 
   const html = await brandedShell({

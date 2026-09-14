@@ -2,6 +2,17 @@ import pool from "../db/pool.js";
 import { checkAdmin } from "../lib/adminAuth.js";
 
 export default async function brandRoutes(fastify) {
+  /** Config publique programme partenaire (bannières) */
+  fastify.get("/partner-config", async () => {
+    const { rows } = await pool.query(`
+      SELECT key, value FROM brand_settings
+      WHERE category = 'partner'
+    `);
+    const config = {};
+    for (const row of rows) config[row.key] = row.value;
+    return config;
+  });
+
   fastify.get("/brand/settings", async () => {
     const result = await pool.query(
       `SELECT key, value, type FROM brand_settings ORDER BY category, key`

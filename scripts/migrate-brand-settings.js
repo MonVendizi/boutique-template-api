@@ -148,6 +148,51 @@ const defaults = [
   ["gtm_id", "", "text", "tracking", "Google Tag Manager ID"],
   ["ga4_measurement_id", "", "text", "tracking", "Google Analytics 4 ID"],
   ["google_business_url", "", "text", "tracking", "Lien Google My Business"],
+
+  // Programme partenaire
+  ["partner_jourx_enabled", "false", "boolean", "partner", "Pub JourX activée"],
+  [
+    "partner_jourx_placement",
+    "footer",
+    "string",
+    "partner",
+    "Placement pub JourX : footer | sidebar",
+  ],
+  [
+    "partner_tinaluxe_enabled",
+    "false",
+    "boolean",
+    "partner",
+    "Pub TinaLuxe activée",
+  ],
+  [
+    "partner_tinaluxe_placement",
+    "footer",
+    "string",
+    "partner",
+    "Placement pub TinaLuxe : footer | sidebar",
+  ],
+  [
+    "partner_category_conflict",
+    "false",
+    "boolean",
+    "partner",
+    "Conflit catégorie TinaLuxe - masque l option",
+  ],
+  [
+    "partner_discount_amount",
+    "0",
+    "number",
+    "partner",
+    "Réduction mensuelle accordée en euros",
+  ],
+  [
+    "partner_activated_at",
+    "",
+    "string",
+    "partner",
+    "Date activation programme partenaire",
+  ],
 ];
 
 for (const [key, value, type, category, label] of defaults) {

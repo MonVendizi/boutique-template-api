@@ -1166,6 +1166,45 @@ export default async function adminRoutes(fastify) {
     };
   });
 
+  /** Programme partenaire (pubs JourX / TinaLuxe) */
+  fastify.put("/admin/partner", async (request, reply) => {
+    if (!(await checkAdmin(request, reply))) return;
+    const {
+      jourx_enabled,
+      jourx_placement,
+      tinaluxe_enabled,
+      tinaluxe_placement,
+      category_conflict,
+      discount_amount,
+    } = request.body || {};
+
+    const updates = [
+      ["partner_jourx_enabled", String(jourx_enabled ?? false)],
+      ["partner_jourx_placement", jourx_placement || "footer"],
+      ["partner_tinaluxe_enabled", String(tinaluxe_enabled ?? false)],
+      ["partner_tinaluxe_placement", tinaluxe_placement || "footer"],
+      ["partner_category_conflict", String(category_conflict ?? false)],
+      ["partner_discount_amount", String(discount_amount ?? 0)],
+      [
+        "partner_activated_at",
+        jourx_enabled || tinaluxe_enabled ? new Date().toISOString() : "",
+      ],
+    ];
+
+    for (const [key, value] of updates) {
+      await pool.query(
+        `
+      INSERT INTO brand_settings (key, value, type, category, label)
+      VALUES ($1, $2, 'string', 'partner', $1)
+      ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()
+    `,
+        [key, value]
+      );
+    }
+
+    return { success: true };
+  });
+
   /** Changer le mot de passe admin */
   fastify.put("/admin/password", async (request, reply) => {
     const body = request.body || {};

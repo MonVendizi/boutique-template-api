@@ -2,7 +2,7 @@ import pool from "../db/pool.js";
 import { checkAdmin } from "../lib/adminAuth.js";
 
 export default async function brandRoutes(fastify) {
-  /** Config publique programme partenaire (bannières) */
+  /** Config publique programme partenaire (bannières + grille réductions) */
   fastify.get("/partner-config", async () => {
     const { rows } = await pool.query(`
       SELECT key, value FROM brand_settings
@@ -10,6 +10,22 @@ export default async function brandRoutes(fastify) {
     `);
     const config = {};
     for (const row of rows) config[row.key] = row.value;
+
+    const defaults = {
+      jourx_cart_discount: "10",
+      jourx_confirmation_discount: "15",
+      jourx_not_found_discount: "5",
+      jourx_all_discount: "20",
+      tinaluxe_cart_discount: "15",
+      tinaluxe_confirmation_discount: "20",
+      tinaluxe_not_found_discount: "5",
+      tinaluxe_all_discount: "25",
+    };
+    for (const [key, value] of Object.entries(defaults)) {
+      if (config[key] === undefined || config[key] === null || config[key] === "") {
+        config[key] = value;
+      }
+    }
     return config;
   });
 

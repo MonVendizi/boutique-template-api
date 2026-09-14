@@ -193,6 +193,33 @@ const defaults = [
     "partner",
     "Date activation programme partenaire",
   ],
+  // Grille des réductions (synchro dashboard Vendizi)
+  ["jourx_cart_discount", "10", "number", "partner", "JourX — Panier"],
+  [
+    "jourx_confirmation_discount",
+    "15",
+    "number",
+    "partner",
+    "JourX — Confirmation",
+  ],
+  ["jourx_not_found_discount", "5", "number", "partner", "JourX — Page 404"],
+  ["jourx_all_discount", "20", "number", "partner", "JourX — Tous"],
+  ["tinaluxe_cart_discount", "15", "number", "partner", "TinaLuxe — Panier"],
+  [
+    "tinaluxe_confirmation_discount",
+    "20",
+    "number",
+    "partner",
+    "TinaLuxe — Confirmation",
+  ],
+  [
+    "tinaluxe_not_found_discount",
+    "5",
+    "number",
+    "partner",
+    "TinaLuxe — Page 404",
+  ],
+  ["tinaluxe_all_discount", "25", "number", "partner", "TinaLuxe — Tous"],
 ];
 
 for (const [key, value, type, category, label] of defaults) {

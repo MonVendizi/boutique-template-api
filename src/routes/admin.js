@@ -1177,6 +1177,7 @@ export default async function adminRoutes(fastify) {
       tinaluxe_placement,
       category_conflict,
       discount_amount,
+      discounts,
     } = request.body || {};
 
     const updates = [
@@ -1192,6 +1193,19 @@ export default async function adminRoutes(fastify) {
       ],
     ];
 
+    if (discounts && typeof discounts === "object") {
+      for (const [key, value] of Object.entries(discounts)) {
+        if (
+          !/^(jourx|tinaluxe)_(cart|confirmation|not_found|all)_discount$/.test(
+            key
+          )
+        ) {
+          continue;
+        }
+        updates.push([key, String(value ?? 0)]);
+      }
+    }
+
     for (const [key, value] of updates) {
       await pool.query(
         `
@@ -1204,6 +1218,40 @@ export default async function adminRoutes(fastify) {
     }
 
     return { success: true };
+  });
+
+  /** Synchro grille des réductions (depuis dashboard Vendizi) */
+  fastify.put("/admin/partner-discounts", async (request, reply) => {
+    if (!(await checkAdmin(request, reply))) return;
+    const body = request.body || {};
+    let count = 0;
+
+    // Format { settings: [{ key, value }] } ou { discounts: { key: value } }
+    const entries = Array.isArray(body.settings)
+      ? body.settings.map((item) => [item.key, item.value])
+      : Object.entries(body.discounts || body);
+
+    for (const [rawKey, rawValue] of entries) {
+      const key = String(rawKey || "");
+      if (
+        !/^(jourx|tinaluxe)_(cart|confirmation|not_found|all)_discount$/.test(
+          key
+        )
+      ) {
+        continue;
+      }
+      await pool.query(
+        `
+        INSERT INTO brand_settings (key, value, type, category, label)
+        VALUES ($1, $2, 'number', 'partner', $1)
+        ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()
+      `,
+        [key, String(rawValue ?? 0)]
+      );
+      count += 1;
+    }
+
+    return { success: true, updated: count };
   });
 
   /** Notifie Vendizi d'une demande partenaire (activation / désactivation) */

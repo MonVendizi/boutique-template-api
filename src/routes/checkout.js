@@ -17,6 +17,36 @@ export default async function checkoutRoutes(fastify) {
     };
   });
 
+  fastify.post("/stripe/payment-intent", async (request, reply) => {
+    const { amount, currency, metadata } = request.body || {};
+    const amountCents = Number(amount);
+    if (!Number.isFinite(amountCents) || amountCents < 50) {
+      return reply.code(400).send({ error: "Montant invalide" });
+    }
+
+    try {
+      const stripe = getStripe();
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amountCents,
+        currency: currency || "eur",
+        metadata:
+          metadata && typeof metadata === "object" ? metadata : {},
+        automatic_payment_methods: { enabled: true },
+      });
+
+      return {
+        client_secret: paymentIntent.client_secret,
+        payment_intent_id: paymentIntent.id,
+        publishable_key: process.env.STRIPE_PUBLISHABLE_KEY,
+      };
+    } catch (error) {
+      request.log.error(error);
+      return reply.code(500).send({
+        error: error.message || "Erreur création paiement",
+      });
+    }
+  });
+
   fastify.post("/checkout", async (request, reply) => {
     const {
       items,

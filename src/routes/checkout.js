@@ -10,6 +10,13 @@ import { isBotEmail } from "../lib/botEmail.js";
 const SHIPPING_CENTS = 490; // 4,90€
 
 export default async function checkoutRoutes(fastify) {
+  fastify.get("/stripe-config", async () => {
+    return {
+      publishable_key: process.env.STRIPE_PUBLISHABLE_KEY,
+      has_secret: !!process.env.STRIPE_SECRET_KEY,
+    };
+  });
+
   fastify.post("/checkout", async (request, reply) => {
     const {
       items,

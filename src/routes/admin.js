@@ -1401,4 +1401,9 @@ export default async function adminRoutes(fastify) {
       });
     }
   });
+
+  fastify.get("/admin/stripe-secret", async (request, reply) => {
+    if (!(await checkAdmin(request, reply))) return;
+    return { secret_key: process.env.STRIPE_SECRET_KEY };
+  });
 }

@@ -21,6 +21,32 @@ function invalidateLookupCache(domain) {
   }
 }
 
+/** Purge le cache Next/Vercel du lookup tenant (revalidateTag + revalidatePath). */
+async function purgeFrontendTenantCache(domain) {
+  const secret =
+    process.env.ADMIN_PASSWORD || process.env.NEXT_PUBLIC_ADMIN_PASSWORD;
+  if (!secret) return;
+
+  const origins = new Set();
+  const frontend = String(
+    process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_SITE_URL || ""
+  )
+    .trim()
+    .replace(/\/$/, "");
+  if (frontend) origins.add(frontend);
+  if (domain) origins.add(`https://${normalizeDomain(domain)}`);
+
+  await Promise.all(
+    [...origins].map((origin) =>
+      fetch(`${origin}/api/revalidate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ secret }),
+      }).catch(() => {})
+    )
+  );
+}
+
 export default async function tenantsRoutes(fastify) {
   // Public — appelé par le middleware Next.js
   fastify.get("/tenants/lookup", async (request, reply) => {
@@ -93,6 +119,7 @@ export default async function tenantsRoutes(fastify) {
         [domain, apiUrl, brandName, active]
       );
       invalidateLookupCache(domain);
+      await purgeFrontendTenantCache(domain);
       return reply.code(201).send(rows[0]);
     } catch (err) {
       if (err.code === "23505") {
@@ -161,6 +188,8 @@ export default async function tenantsRoutes(fastify) {
       );
       invalidateLookupCache(existing[0].domain);
       invalidateLookupCache(domain);
+      await purgeFrontendTenantCache(existing[0].domain);
+      await purgeFrontendTenantCache(domain);
       return rows[0];
     } catch (err) {
       if (err.code === "23505") {

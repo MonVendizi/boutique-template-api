@@ -17,6 +17,22 @@ import { checkAdmin, resolveValidAdminPassword } from "../lib/adminAuth.js";
 const __adminDir = path.dirname(fileURLToPath(import.meta.url));
 const __apiRoot = path.join(__adminDir, "../..");
 
+function runMigrations() {
+  execSync("node scripts/migrate-brand-settings.js", {
+    stdio: "inherit",
+    cwd: __apiRoot,
+    env: process.env,
+  });
+}
+
+function runSeedData() {
+  execSync("node src/db/seed.js", {
+    stdio: "inherit",
+    cwd: __apiRoot,
+    env: process.env,
+  });
+}
+
 const VALID_ORDER_STATUSES = [
   "pending",
   "paid",
@@ -1356,6 +1372,33 @@ export default async function adminRoutes(fastify) {
       return reply
         .code(500)
         .send({ error: error.message || "Erreur migrations" });
+    }
+  });
+
+  fastify.post("/admin/reset-to-defaults", async (request, reply) => {
+    if (!(await checkAdmin(request, reply))) return;
+
+    try {
+      await pool.query(`DELETE FROM brand_settings`);
+
+      runMigrations();
+
+      await pool.query(`DELETE FROM stock_movements`);
+      await pool.query(`DELETE FROM products`);
+      await pool.query(`DELETE FROM categories`);
+      await pool.query(`DELETE FROM nav_groups`);
+
+      runSeedData();
+
+      return {
+        success: true,
+        message: "Boutique restaurée aux paramètres d'usine",
+      };
+    } catch (error) {
+      request.log.error(error);
+      return reply.code(500).send({
+        error: error.message || "Erreur lors de la restauration",
+      });
     }
   });
 }

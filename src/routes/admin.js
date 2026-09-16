@@ -1406,4 +1406,134 @@ export default async function adminRoutes(fastify) {
     if (!(await checkAdmin(request, reply))) return;
     return { secret_key: process.env.STRIPE_SECRET_KEY };
   });
+
+  fastify.get("/admin/customers", async (request, reply) => {
+    if (!(await checkAdmin(request, reply))) return;
+
+    const q = request.query || {};
+    const page = Math.max(1, parseInt(String(q.page || "1"), 10) || 1);
+    const limit = Math.min(
+      100,
+      Math.max(1, parseInt(String(q.limit || "20"), 10) || 20)
+    );
+    const search = String(q.search || "").trim();
+    const sort = String(q.sort || "last_order_desc");
+    const offset = (page - 1) * limit;
+
+    const sortMap = {
+      last_order_desc: "last_order_at DESC NULLS LAST",
+      last_order_asc: "last_order_at ASC NULLS LAST",
+      total_desc: "total_spent DESC",
+      total_asc: "total_spent ASC",
+      orders_desc: "order_count DESC",
+      name_asc: "name ASC",
+    };
+    const orderBy = sortMap[sort] || "last_order_at DESC NULLS LAST";
+
+    const searchFilterList = search
+      ? `AND (
+          LOWER(c.email) LIKE LOWER($3)
+          OR LOWER(COALESCE(c.first_name, '')) LIKE LOWER($3)
+          OR LOWER(COALESCE(c.last_name, '')) LIKE LOWER($3)
+        )`
+      : "";
+    const searchFilterCount = search
+      ? `AND (
+          LOWER(c.email) LIKE LOWER($1)
+          OR LOWER(COALESCE(c.first_name, '')) LIKE LOWER($1)
+          OR LOWER(COALESCE(c.last_name, '')) LIKE LOWER($1)
+        )`
+      : "";
+    const searchParam = search ? [`%${search}%`] : [];
+
+    const { rows: customers } = await pool.query(
+      `
+      SELECT
+        c.id,
+        TRIM(CONCAT(COALESCE(c.first_name, ''), ' ', COALESCE(c.last_name, ''))) AS name,
+        c.email,
+        c.created_at,
+        EXISTS (
+          SELECT 1 FROM newsletter_subscribers ns
+          WHERE LOWER(ns.email) = LOWER(c.email) AND ns.active = true
+        ) AS newsletter_subscribed,
+        COUNT(o.id)::int AS order_count,
+        COALESCE(SUM(o.total_cents), 0)::bigint AS total_spent,
+        MAX(o.created_at) AS last_order_at
+      FROM customers c
+      LEFT JOIN orders o ON LOWER(o.customer_email) = LOWER(c.email)
+      WHERE 1=1 ${searchFilterList}
+      GROUP BY c.id, c.first_name, c.last_name, c.email, c.created_at
+      ORDER BY ${orderBy}
+      LIMIT $1 OFFSET $2
+    `,
+      [limit, offset, ...searchParam]
+    );
+
+    const { rows: countRows } = await pool.query(
+      `
+      SELECT COUNT(DISTINCT c.id) AS total
+      FROM customers c
+      WHERE 1=1 ${searchFilterCount}
+    `,
+      searchParam
+    );
+
+    const total = parseInt(countRows[0]?.total || "0", 10);
+
+    return {
+      customers,
+      total,
+      page,
+      pages: Math.max(1, Math.ceil(total / limit)),
+      limit,
+    };
+  });
+
+  fastify.get("/admin/customers/:id", async (request, reply) => {
+    if (!(await checkAdmin(request, reply))) return;
+
+    const { id } = request.params;
+
+    const { rows } = await pool.query(
+      `
+      SELECT
+        c.id,
+        c.email,
+        c.first_name,
+        c.last_name,
+        c.created_at,
+        TRIM(CONCAT(COALESCE(c.first_name, ''), ' ', COALESCE(c.last_name, ''))) AS name,
+        EXISTS (
+          SELECT 1 FROM newsletter_subscribers ns
+          WHERE LOWER(ns.email) = LOWER(c.email) AND ns.active = true
+        ) AS newsletter_subscribed,
+        COUNT(o.id)::int AS order_count,
+        COALESCE(SUM(o.total_cents), 0)::bigint AS total_spent,
+        MAX(o.created_at) AS last_order_at
+      FROM customers c
+      LEFT JOIN orders o ON LOWER(o.customer_email) = LOWER(c.email)
+      WHERE c.id = $1
+      GROUP BY c.id
+    `,
+      [id]
+    );
+
+    if (!rows.length) {
+      return reply.code(404).send({ error: "Client introuvable" });
+    }
+
+    const { rows: orders } = await pool.query(
+      `
+      SELECT id, created_at, status, total_cents, items
+      FROM orders
+      WHERE LOWER(customer_email) = LOWER($1)
+      ORDER BY created_at DESC
+      LIMIT 50
+    `,
+      [rows[0].email]
+    );
+
+    return { ...rows[0], orders };
+  });
 }

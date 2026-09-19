@@ -8,6 +8,8 @@ import {
   sendOrderShippedEmail,
   sendInactiveCustomerEmail,
   sendPartnerChangeNotification,
+  sendSupportContactEmail,
+  sendImprovementEmail,
 } from "../lib/email.js";
 import { getSettings, setSettings } from "../lib/settings.js";
 import { createReferralForCustomer } from "./referrals.js";
@@ -1535,5 +1537,47 @@ export default async function adminRoutes(fastify) {
     );
 
     return { ...rows[0], orders };
+  });
+
+  fastify.post("/admin/support-contact", async (request, reply) => {
+    if (!(await checkAdmin(request, reply))) return;
+    const body = request.body || {};
+    const name = String(body.name || "").trim();
+    const email = String(body.email || "").trim();
+    const subject = String(body.subject || "").trim();
+    const message = String(body.message || "").trim();
+    if (!name || !email || !message) {
+      return reply
+        .code(400)
+        .send({ error: "Nom, email et message sont requis" });
+    }
+    try {
+      await sendSupportContactEmail({ name, email, subject, message });
+      return { success: true };
+    } catch (error) {
+      request.log.error(error);
+      return reply.code(500).send({ error: "Erreur envoi message support" });
+    }
+  });
+
+  fastify.post("/admin/submit-improvement", async (request, reply) => {
+    if (!(await checkAdmin(request, reply))) return;
+    const body = request.body || {};
+    const title = String(body.title || "").trim();
+    const category = String(body.category || "").trim();
+    const description = String(body.description || "").trim();
+    const impact = String(body.impact || "").trim();
+    if (!title || !description) {
+      return reply
+        .code(400)
+        .send({ error: "Titre et description sont requis" });
+    }
+    try {
+      await sendImprovementEmail({ title, category, description, impact });
+      return { success: true };
+    } catch (error) {
+      request.log.error(error);
+      return reply.code(500).send({ error: "Erreur envoi de l'idée" });
+    }
   });
 }

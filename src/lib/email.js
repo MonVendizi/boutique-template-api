@@ -1808,3 +1808,50 @@ export async function sendPartnerChangeNotification({
     `,
   });
 }
+
+export async function sendSupportContactEmail({
+  name,
+  email,
+  subject,
+  message,
+}) {
+  const settings = await getBrandSettings();
+  return sendBrandedEmail({
+    to: "contact@vendizi.fr",
+    subject: `🎧 Support — ${settings.brandName} — ${subject || "Contact"}`,
+    html: `
+      <h2>Contact support boutique</h2>
+      <p><strong>Boutique :</strong> ${escapeHtml(settings.brandName)}</p>
+      <p><strong>Nom :</strong> ${escapeHtml(name)}</p>
+      <p><strong>Email :</strong> ${escapeHtml(email)}</p>
+      <p><strong>Sujet :</strong> ${escapeHtml(subject || "Contact")}</p>
+      <p><strong>Message :</strong></p>
+      <p>${escapeHtml(message).replace(/\n/g, "<br>")}</p>
+      <p><strong>Date :</strong> ${new Date().toLocaleDateString("fr-FR")}</p>
+    `,
+    brand: { ...settings, replyTo: email || settings.replyTo },
+  });
+}
+
+export async function sendImprovementEmail({
+  title,
+  category,
+  description,
+  impact,
+}) {
+  const settings = await getBrandSettings();
+  return sendBrandedEmail({
+    to: "contact@vendizi.fr",
+    subject: `💡 Idée — ${settings.brandName} — ${title}`,
+    html: `
+      <h2>Idée d'amélioration Vendizi</h2>
+      <p><strong>Boutique :</strong> ${escapeHtml(settings.brandName)}</p>
+      <p><strong>Titre :</strong> ${escapeHtml(title)}</p>
+      <p><strong>Catégorie :</strong> ${escapeHtml(category || "Autre")}</p>
+      <p><strong>Impact estimé :</strong> ${escapeHtml(impact || "")}</p>
+      <p><strong>Description :</strong></p>
+      <p>${escapeHtml(description).replace(/\n/g, "<br>")}</p>
+      <p><strong>Date :</strong> ${new Date().toLocaleDateString("fr-FR")}</p>
+    `,
+  });
+}

@@ -363,7 +363,7 @@ async function sendBrandedEmail({ to, subject, html, brand: brandOverride }) {
   const brand = brandOverride || (await getBrandSettings());
 
   const { data, error } = await resend.emails.send({
-    from: emailFrom(brand),
+    from: brand.forcedFrom || emailFrom(brand),
     replyTo: brand.replyTo,
     to,
     subject,
@@ -1829,7 +1829,12 @@ export async function sendSupportContactEmail({
       <p>${escapeHtml(message).replace(/\n/g, "<br>")}</p>
       <p><strong>Date :</strong> ${new Date().toLocaleDateString("fr-FR")}</p>
     `,
-    brand: { ...settings, replyTo: email || settings.replyTo },
+    brand: {
+      ...settings,
+      senderName: settings.brandName || "Support Vendizi",
+      replyTo: email || settings.replyTo,
+      forcedFrom: `${settings.brandName || "Support"} <support@vendizi.fr>`,
+    },
   });
 }
 

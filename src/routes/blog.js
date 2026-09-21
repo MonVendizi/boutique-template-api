@@ -1,5 +1,6 @@
 import pool from "../db/pool.js";
 import { checkAdmin, resolveValidAdminPassword } from "../lib/adminAuth.js";
+import { notifyIndexNow } from "../lib/indexnow.js";
 
 function normalizePost(body = {}) {
   return {
@@ -127,6 +128,9 @@ export default async function blogRoutes(fastify) {
           publishNow ? new Date() : null,
         ]
       );
+      if (publishNow && rows[0]?.slug) {
+        void notifyIndexNow([`/blog/${rows[0].slug}`, "/blog"]);
+      }
       return { success: true, post: rows[0] };
     } catch (err) {
       console.error("POST /admin/blog:", err);
@@ -194,6 +198,9 @@ export default async function blogRoutes(fastify) {
           id,
         ]
       );
+      if (rows[0]?.slug) {
+        void notifyIndexNow([`/blog/${rows[0].slug}`]);
+      }
       return { success: true, post: rows[0] };
     } catch (err) {
       console.error("PUT /admin/blog/:id:", err);

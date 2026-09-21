@@ -15,6 +15,7 @@ import { getSettings, setSettings } from "../lib/settings.js";
 import { createReferralForCustomer } from "./referrals.js";
 import { BetaAnalyticsDataClient } from "@google-analytics/data";
 import { checkAdmin, resolveValidAdminPassword } from "../lib/adminAuth.js";
+import { notifyIndexNow } from "../lib/indexnow.js";
 
 const __adminDir = path.dirname(fileURLToPath(import.meta.url));
 const __apiRoot = path.join(__adminDir, "../..");
@@ -375,6 +376,10 @@ export default async function adminRoutes(fastify) {
 
       await upsertProductVariants(rows[0].id, p);
       const variantsMap = await loadVariantsMap([rows[0].id]);
+      const slug = rows[0].slug;
+      if (slug) {
+        void notifyIndexNow([`/produits/${slug}`, "/boutique"]);
+      }
 
       return {
         success: true,
@@ -486,6 +491,10 @@ export default async function adminRoutes(fastify) {
         }
 
         const variantsMap = await loadVariantsMap([id]);
+        const slug = rows[0].slug || p.slug;
+        if (slug) {
+          void notifyIndexNow([`/produits/${slug}`, "/boutique"]);
+        }
         return {
           success: true,
           product: {

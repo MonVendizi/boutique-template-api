@@ -1,7 +1,14 @@
 import pool from "../db/pool.js";
-import { checkAdmin } from "../lib/adminAuth.js";
+import { notifyIndexNow } from "../lib/indexnow.js";
 
 export default async function brandRoutes(fastify) {
+  fastify.get("/indexnow-key", async (request, reply) => {
+    const key = process.env.INDEXNOW_KEY || "";
+    if (!key) {
+      return reply.code(404).send({ error: "IndexNow non configuré" });
+    }
+    return { key };
+  });
   /** Config publique programme partenaire (bannières + grille réductions) */
   fastify.get("/partner-config", async () => {
     const { rows } = await pool.query(`
@@ -77,6 +84,7 @@ export default async function brandRoutes(fastify) {
       );
     }
 
+    void notifyIndexNow(["/"]);
     return { success: true };
   });
 }

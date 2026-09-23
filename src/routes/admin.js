@@ -1391,6 +1391,7 @@ export default async function adminRoutes(fastify) {
 
     try {
       await pool.query(`DELETE FROM brand_settings`);
+      await pool.query(`DELETE FROM analytics_events`);
 
       runMigrations();
 

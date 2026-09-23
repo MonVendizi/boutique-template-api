@@ -30,12 +30,12 @@ const defaults = [
   ["brand_charter", "{}", "json", "identity", "Charte de marque"],
 
   // Couleurs
-  ["color_primary", "#D4AF37", "color", "colors", "Couleur principale"],
-  ["color_primary_light", "#E6C766", "color", "colors", "Couleur principale claire"],
-  ["color_dark", "#0B0B0B", "color", "colors", "Couleur sombre"],
-  ["color_dark_secondary", "#161616", "color", "colors", "Couleur sombre secondaire"],
-  ["color_light", "#FFFDF8", "color", "colors", "Couleur claire"],
-  ["color_text", "#EAEAEA", "color", "colors", "Couleur texte"],
+  ["color_primary", "#2D6A4F", "color", "colors", "Couleur principale"],
+  ["color_primary_light", "#52B788", "color", "colors", "Couleur principale claire"],
+  ["color_dark", "#1B1B2E", "color", "colors", "Couleur sombre"],
+  ["color_dark_secondary", "#2A2A3E", "color", "colors", "Couleur sombre secondaire"],
+  ["color_light", "#FAFAFA", "color", "colors", "Couleur claire"],
+  ["color_text", "#E8E8E8", "color", "colors", "Couleur texte"],
 
   // Home Hero
   ["hero_supertitle", "Bien-être naturel premium", "text", "home", "Sur-titre hero"],

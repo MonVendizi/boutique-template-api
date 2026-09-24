@@ -4,11 +4,7 @@ import pool from "./pool.js";
 dotenv.config();
 
 const EXISTING_EMAILS = [
-  { email: "nganeomie@gmail.com", source: "wp-import" },
-  { email: "michellemvondo92@gmail.com", source: "wp-import" },
-  { email: "mogue.alida1@gmail.com", source: "wp-import" },
-  { email: "lgerard@club-internet.fr", source: "wp-import" },
-  { email: "ngahclaudine0@gmail.com", source: "wp-import" },
+  { email: "exemple@example.com", source: "seed" },
 ];
 
 const CREATE_SQL = `

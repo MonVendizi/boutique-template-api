@@ -16,6 +16,11 @@ import { createReferralForCustomer } from "./referrals.js";
 import { BetaAnalyticsDataClient } from "@google-analytics/data";
 import { checkAdmin, resolveValidAdminPassword } from "../lib/adminAuth.js";
 import { notifyIndexNow } from "../lib/indexnow.js";
+import {
+  missingKeysReply,
+  runInstagramBioProspection,
+  runCommentSniping,
+} from "../lib/prospection.js";
 
 const __adminDir = path.dirname(fileURLToPath(import.meta.url));
 const __apiRoot = path.join(__adminDir, "../..");
@@ -1414,17 +1419,46 @@ export default async function adminRoutes(fastify) {
     }
   });
 
-  fastify.get("/admin/stripe-secret", async (request, reply) => {
-    if (!(await checkAdmin(request, reply))) return;
-    return { secret_key: process.env.STRIPE_SECRET_KEY };
-  });
-
   fastify.get("/admin/config", async (request, reply) => {
     if (!(await checkAdmin(request, reply))) return reply;
     return {
-      apify_api_key: process.env.APIFY_API_KEY || null,
-      anthropic_api_key: process.env.ANTHROPIC_API_KEY || null,
+      apify_configured: Boolean(process.env.APIFY_API_KEY),
+      anthropic_configured: Boolean(process.env.ANTHROPIC_API_KEY),
     };
+  });
+
+  fastify.post("/admin/prospection", async (request, reply) => {
+    if (!(await checkAdmin(request, reply))) return reply;
+
+    const missing = missingKeysReply();
+    if (missing) return reply.code(missing.status).send(missing.body);
+
+    try {
+      const result = await runInstagramBioProspection(request.body || {});
+      return reply.code(result.status).send(result.body);
+    } catch (error) {
+      request.log.error(error);
+      return reply.code(500).send({
+        error: error.message || "Erreur prospection",
+      });
+    }
+  });
+
+  fastify.post("/admin/prospection-sniping", async (request, reply) => {
+    if (!(await checkAdmin(request, reply))) return reply;
+
+    const missing = missingKeysReply();
+    if (missing) return reply.code(missing.status).send(missing.body);
+
+    try {
+      const result = await runCommentSniping(request.body || {});
+      return reply.code(result.status).send(result.body);
+    } catch (error) {
+      request.log.error(error);
+      return reply.code(500).send({
+        error: error.message || "Erreur sniping",
+      });
+    }
   });
 
   fastify.get("/admin/customers", async (request, reply) => {

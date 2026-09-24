@@ -1419,6 +1419,14 @@ export default async function adminRoutes(fastify) {
     return { secret_key: process.env.STRIPE_SECRET_KEY };
   });
 
+  fastify.get("/admin/config", async (request, reply) => {
+    if (!(await checkAdmin(request, reply))) return reply;
+    return {
+      apify_api_key: process.env.APIFY_API_KEY || null,
+      anthropic_api_key: process.env.ANTHROPIC_API_KEY || null,
+    };
+  });
+
   fastify.get("/admin/customers", async (request, reply) => {
     if (!(await checkAdmin(request, reply))) return;
 

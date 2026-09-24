@@ -1,0 +1,8 @@
+node_modules
+.git
+.env
+.vercel
+*.log
+secrets
+.github
+README.md

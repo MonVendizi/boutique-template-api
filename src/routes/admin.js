@@ -20,6 +20,7 @@ import {
   missingKeysReply,
   runInstagramBioProspection,
   runCommentSniping,
+  runGoogleMapsProspection,
 } from "../lib/prospection.js";
 
 const __adminDir = path.dirname(fileURLToPath(import.meta.url));
@@ -1457,6 +1458,23 @@ export default async function adminRoutes(fastify) {
       request.log.error(error);
       return reply.code(500).send({
         error: error.message || "Erreur sniping",
+      });
+    }
+  });
+
+  fastify.post("/admin/prospection-maps", async (request, reply) => {
+    if (!(await checkAdmin(request, reply))) return reply;
+
+    const missing = missingKeysReply();
+    if (missing) return reply.code(missing.status).send(missing.body);
+
+    try {
+      const result = await runGoogleMapsProspection(request.body || {});
+      return reply.code(result.status).send(result.body);
+    } catch (error) {
+      request.log.error(error);
+      return reply.code(500).send({
+        error: error.message || "Erreur Google Maps",
       });
     }
   });

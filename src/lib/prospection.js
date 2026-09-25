@@ -573,3 +573,175 @@ export async function runCommentSniping(body) {
     },
   };
 }
+
+async function analyzeMapsPlace(place) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return null;
+
+  const title = String(place.title || place.name || "").trim();
+  const category = String(place.categoryName || place.category || "").trim();
+  const address = String(place.address || "").trim();
+  const website = place.website ? String(place.website) : "aucun";
+  const score = place.totalScore ?? "?";
+  const reviews = place.reviewsCount ?? 0;
+
+  const claudePrompt = `Tu es un assistant commercial pour un artisan français.
+
+Voici la fiche Google Maps d'un établissement :
+Nom : ${title}
+Catégorie : ${category}
+Adresse : ${address}
+Site web : ${website}
+Note Google : ${score}/5 (${reviews} avis)
+
+Ta mission :
+1. Détermine si c'est un établissement INDÉPENDANT (pas une chaîne nationale/internationale)
+   → indépendant si : nom unique, pas de numéro dans le nom, site web artisanal
+   → chaîne si : Yves Rocher, L'Occitane, The Body Shop, etc.
+2. Si indépendant, génère un script d'approche COURT pour proposer un partenariat :
+   → Version EMAIL (3 phrases max)
+   → Version TÉLÉPHONE (2 phrases max, naturel et chaleureux)
+
+Réponds en JSON :
+{
+  "is_independent": true/false,
+  "reason": "explication courte",
+  "email_script": "...",
+  "phone_script": "..."
+}`;
+
+  const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 500,
+      messages: [{ role: "user", content: claudePrompt }],
+    }),
+  });
+
+  if (!claudeRes.ok) {
+    const errText = await claudeRes.text().catch(() => "");
+    console.error("Claude maps analysis error:", claudeRes.status, errText);
+    return null;
+  }
+
+  const claudeData = await claudeRes.json();
+  const text = String(claudeData.content?.[0]?.text || "");
+  const parsed = parseJsonObject(text);
+  if (!parsed) return null;
+
+  return {
+    is_independent: Boolean(parsed.is_independent),
+    reason: String(parsed.reason || "").trim(),
+    email_script: String(parsed.email_script || "").trim(),
+    phone_script: String(parsed.phone_script || "").trim(),
+  };
+}
+
+export async function runGoogleMapsProspection(body) {
+  const apifyKey = process.env.APIFY_API_KEY;
+  const business_type = String(body.business_type || "").trim();
+  const location = String(body.location || "").trim();
+  const radius_km = Number(body.radius_km) || 50;
+  const maxResults = Math.min(
+    40,
+    Math.max(10, Number(body.max_results) || 20)
+  );
+
+  if (!business_type || !location) {
+    return {
+      status: 400,
+      body: { error: "Type d'établissement et région/ville requis" },
+    };
+  }
+
+  const apifyRes = await fetch(
+    `https://api.apify.com/v2/actors/apify~google-maps-scraper/runs?token=${apifyKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        searchStringsArray: [`${business_type} ${location}`],
+        maxCrawledPlacesPerSearch: maxResults,
+        language: "fr",
+        countryCode: "fr",
+        ...(radius_km
+          ? { searchMatching: "all", deeperCityScrape: false }
+          : {}),
+      }),
+    }
+  );
+
+  const apifyData = await apifyRes.json();
+  console.log("Maps Apify status:", apifyRes.status);
+  console.log("Maps Apify run id:", apifyData?.data?.id);
+
+  if (!apifyRes.ok || !apifyData?.data?.id) {
+    throw new Error(`Apify error: ${JSON.stringify(apifyData)}`);
+  }
+
+  const allPlaces = await pollApifyDataset(
+    apifyData.data.id,
+    apifyKey,
+    "maps",
+    40,
+    maxResults
+  );
+  console.log(`Établissements récupérés: ${allPlaces.length}`);
+
+  if (!Array.isArray(allPlaces) || allPlaces.length === 0) {
+    return {
+      status: 200,
+      body: {
+        prospects: [],
+        total: 0,
+        scanned: 0,
+        message: "Aucun établissement trouvé ou run encore en cours",
+      },
+    };
+  }
+
+  const independents = [];
+  for (const place of allPlaces) {
+    const name = String(place.title || place.name || "").trim();
+    if (!name) continue;
+
+    const analysis = await analyzeMapsPlace(place);
+    if (!analysis?.is_independent) continue;
+
+    const phone = place.phone
+      ? String(place.phone)
+      : place.phoneUnformatted
+        ? String(place.phoneUnformatted)
+        : null;
+
+    independents.push({
+      name,
+      address: String(place.address || "").trim(),
+      phone,
+      website: place.website ? String(place.website) : null,
+      rating: typeof place.totalScore === "number" ? place.totalScore : null,
+      reviews_count: Number(place.reviewsCount) || 0,
+      category: String(place.categoryName || place.category || "").trim(),
+      reason: analysis.reason,
+      email_script: analysis.email_script,
+      phone_script: analysis.phone_script,
+      status: "à contacter",
+      maps_url: place.url ? String(place.url) : null,
+    });
+  }
+
+  return {
+    status: 200,
+    body: {
+      prospects: independents,
+      total: independents.length,
+      scanned: allPlaces.length,
+    },
+  };
+}

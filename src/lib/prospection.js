@@ -1,3 +1,21 @@
+function brandFromBody(body = {}) {
+  return {
+    brand_name: String(body.brand_name || "").trim(),
+    brand_tagline: String(body.brand_tagline || "").trim(),
+    adn_description: String(
+      body.adn_description ||
+        (Array.isArray(body.adn_blocks) ? body.adn_blocks[0]?.text : "") ||
+        ""
+    ).trim(),
+  };
+}
+
+function brandPromptLines(brand = {}) {
+  return `L'artisan qui prospecte s'appelle ${brand.brand_name || ""}.
+Son activité : ${brand.brand_tagline || ""}
+Description : ${brand.adn_description || ""}`;
+}
+
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -27,7 +45,7 @@ async function pollApifyDataset(runId, apifyKey, label, maxPolls = 30, itemLimit
   return [];
 }
 
-async function generateDm(profile, siteUrl) {
+async function generateDm(profile, siteUrl, brand = {}) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return "";
 
@@ -47,6 +65,8 @@ async function generateDm(profile, siteUrl) {
           content: `Tu es Sébastien, développeur chevronné et fondateur de Vendizi (vendizi.fr). Tu as créé cette plateforme e-commerce française pour ta femme Christina, fondatrice de la marque de soins naturels TinaLuxe (tinaluxe.fr), car elle était frustrée par la complexité technique de Shopify et dépendait constamment de toi pour la moindre modification.
 
 Ta mission est de rédiger un premier message de prospection (DM Instagram) ULTRA-HUMAIN, bienveillant, court et percutant, adapté au profil de l'artisan fourni.
+
+${brandPromptLines(brand)}
 
 Voici les données d'entrée :
 - Compte : ${profile.username} (${profile.fullName || profile.full_name || ""})
@@ -221,11 +241,12 @@ Réponds en JSON uniquement :
   return hits;
 }
 
-async function generateSnipingDm(target, comment) {
+async function generateSnipingDm(target, comment, brand = {}) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return "";
 
   const prompt = `Tu es Sébastien, fondateur de Vendizi (vendizi.fr).
+${brandPromptLines(brand)}
 Cet artisan vient de commenter sur la page de ${target} en disant : "${comment}"
 Il exprime clairement une frustration avec sa solution actuelle.
 
@@ -298,6 +319,7 @@ export async function runInstagramBioProspection(body) {
     : [];
   const min_followers = Number(body.min_followers) || 1000;
   const max_followers = Number(body.max_followers) || 15000;
+  const brand = brandFromBody(body);
 
   if (keywords.length === 0) {
     return {
@@ -385,7 +407,7 @@ export async function runInstagramBioProspection(body) {
         siteUrl.includes("bio.link") ||
         siteUrl.includes("stan.store");
 
-      const dm = await generateDm(profile, siteUrl);
+      const dm = await generateDm(profile, siteUrl, brand);
 
       return {
         username,
@@ -421,6 +443,7 @@ export async function runCommentSniping(body) {
         .filter(Boolean)
     : [];
   const maxComments = Number(body.maxComments) || 200;
+  const brand = brandFromBody(body);
 
   if (targets.length === 0) {
     return {
@@ -538,7 +561,7 @@ export async function runCommentSniping(body) {
 
   const frustratedWithDm = await Promise.all(
     uniqueFrustrated.map(async (f) => {
-      const dm = await generateSnipingDm(f.target, f.comment);
+      const dm = await generateSnipingDm(f.target, f.comment, brand);
       const username = f.username.replace(/^@/, "");
       return {
         username,
@@ -574,7 +597,7 @@ export async function runCommentSniping(body) {
   };
 }
 
-async function analyzeMapsPlace(place) {
+async function analyzeMapsPlace(place, brand = {}) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
 
@@ -586,6 +609,8 @@ async function analyzeMapsPlace(place) {
   const reviews = place.reviewsCount ?? 0;
 
   const claudePrompt = `Tu es un assistant commercial pour un artisan français.
+
+${brandPromptLines(brand)}
 
 Voici la fiche Google Maps d'un établissement :
 Nom : ${title}
@@ -652,6 +677,7 @@ export async function runGoogleMapsProspection(body) {
     40,
     Math.max(10, Number(body.max_results) || 20)
   );
+  const brand = brandFromBody(body);
 
   if (!business_type || !location) {
     return {
@@ -711,7 +737,7 @@ export async function runGoogleMapsProspection(body) {
     const name = String(place.title || place.name || "").trim();
     if (!name) continue;
 
-    const analysis = await analyzeMapsPlace(place);
+    const analysis = await analyzeMapsPlace(place, brand);
     if (!analysis?.is_independent) continue;
 
     const phone = place.phone

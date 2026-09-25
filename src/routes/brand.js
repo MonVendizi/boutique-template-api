@@ -69,22 +69,29 @@ export default async function brandRoutes(fastify) {
 
   fastify.put("/admin/brand/settings", async (request, reply) => {
     if (!(await checkAdmin(request, reply))) return reply;
-    const updates = request.body;
+    try {
+      const updates = request.body;
 
-    for (const [key, value] of Object.entries(updates)) {
-      const strValue =
-        typeof value === "object" ? JSON.stringify(value) : String(value);
-      await pool.query(
-        `
+      for (const [key, value] of Object.entries(updates)) {
+        const strValue =
+          typeof value === "object" ? JSON.stringify(value) : String(value);
+        await pool.query(
+          `
       INSERT INTO brand_settings (key, value, updated_at)
       VALUES ($1, $2, NOW())
       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
     `,
-        [key, strValue]
-      );
-    }
+          [key, strValue]
+        );
+      }
 
-    void notifyIndexNow(["/"]);
-    return { success: true };
+      void notifyIndexNow(["/"]);
+      return { success: true };
+    } catch (err) {
+      console.error("Brand settings save error:", err);
+      return reply.code(500).send({
+        error: err.message || "Erreur sauvegarde brand settings",
+      });
+    }
   });
 }

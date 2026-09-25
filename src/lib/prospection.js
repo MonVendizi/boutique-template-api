@@ -1,21 +1,3 @@
-function brandFromBody(body = {}) {
-  return {
-    brand_name: String(body.brand_name || "").trim(),
-    brand_tagline: String(body.brand_tagline || "").trim(),
-    adn_description: String(
-      body.adn_description ||
-        (Array.isArray(body.adn_blocks) ? body.adn_blocks[0]?.text : "") ||
-        ""
-    ).trim(),
-  };
-}
-
-function brandPromptLines(brand = {}) {
-  return `L'artisan qui prospecte s'appelle ${brand.brand_name || ""}.
-Son activité : ${brand.brand_tagline || ""}
-Description : ${brand.adn_description || ""}`;
-}
-
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -43,84 +25,6 @@ async function pollApifyDataset(runId, apifyKey, label, maxPolls = 30, itemLimit
     }
   }
   return [];
-}
-
-async function generateDm(profile, siteUrl, brand = {}) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return "";
-
-  const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 500,
-      messages: [
-        {
-          role: "user",
-          content: `Tu es Sébastien, développeur chevronné et fondateur de Vendizi (vendizi.fr). Tu as créé cette plateforme e-commerce française pour ta femme Christina, fondatrice de la marque de soins naturels TinaLuxe (tinaluxe.fr), car elle était frustrée par la complexité technique de Shopify et dépendait constamment de toi pour la moindre modification.
-
-Ta mission est de rédiger un premier message de prospection (DM Instagram) ULTRA-HUMAIN, bienveillant, court et percutant, adapté au profil de l'artisan fourni.
-
-${brandPromptLines(brand)}
-
-Voici les données d'entrée :
-- Compte : ${profile.username} (${profile.fullName || profile.full_name || ""})
-- Bio : ${profile.biography || profile.bio || "non disponible"}
-- URL_Détectée : ${siteUrl || "VIDE"}
-
----
-
-[RÈGLES DE RÉDACTION ABSOLUES]
-1. Le ton doit être celui d'un artisan/créateur qui parle à un autre indépendant : chaleureux, direct, sans aucun jargon marketing ni blabla corporatif ("générer du trafic", "scaler", "optimiser votre ROI" sont INTERDITS). Tu es là pour rendre service.
-2. Utilise le tutoiement ou le vouvoiement de manière naturelle et fluide selon le style de la bio.
-3. Ne commence JAMAIS par "Je suis le fondateur de Vendizi" ou "Chez Vendizi, on propose...". Reste discret sur la marque au début.
-4. Intègre obligatoirement l'histoire de ta femme Christina et le lien tinaluxe.fr comme preuve concrète.
-5. Termine par une question ouverte, douce et sans pression pour ouvrir la discussion.
-
----
-
-[LOGIQUE ET ADAPTATION SELON LES CAS DE FIGURE]
-
-Analyse l'URL_Détectée et la Bio, puis choisis EXCLUSIVEMENT l'un des angles suivants :
-
-CAS 1 : L'artisan utilise un LINKTREE / BEACONS
-- Angle : Le Linktree éparpille les clients et fait perdre des ventes en route.
-- Structure : Compliment sur un produit précis -> "J'ai remarqué que tu passais par un Linktree pour tes ventes..." -> Histoire Christina -> Boutique premium en 48h -> Offre pionnière (1er mois offert).
-
-CAS 2 : L'artisan a déjà un site SHOPIFY ou indépendant
-- Angle : Shopify coûte cher en frais cachés et demande trop de gestion technique.
-- Structure : Compliment sur leur site -> Histoire Christina (en avait marre de la complexité et des coûts cachés) -> Solution Vendizi (Next.js ultra-rapide, tout inclus 79€, IA résidente SEO) -> Offre pionnière.
-
-CAS 3 : L'artisan vend sur MARKETPLACE (Etsy, Vinted)
-- Angle : Dépendre d'une marketplace dévalue la marque et coûte des commissions.
-- Structure : Compliment sur les créations -> "C'est dommage de laisser tes créations sur [Etsy/Vinted]..." -> Histoire Christina -> "Vendizi te crée ton propre site en 48h, 0% de commission" -> Offre pionnière.
-
-CAS 4 : L'artisan n'a AUCUN SITE (URL VIDE ou commandes en DM)
-- Angle : Gérer les commandes en DM est épuisant. Ils ont peur de la technique.
-- Structure : Compliment sur l'univers -> "J'ai vu que tu gérais tes commandes directement par message ici, ça doit te prendre un temps fou..." -> Histoire Christina -> "On te livre un site pro en 48h sans toucher à la technique" -> Offre pionnière.
-
----
-
-[FORMAT DE SORTIE]
-Renvoie UNIQUEMENT le texte du message prêt à être envoyé. Sans introduction ("Voici le message :"), sans balises. Émojis discrets (max 2) adaptés à l'artisanat.`,
-        },
-      ],
-    }),
-  });
-
-  if (!claudeRes.ok) {
-    const errText = await claudeRes.text().catch(() => "");
-    console.error("Claude DM error:", claudeRes.status, errText);
-    return "";
-  }
-
-  const claudeData = await claudeRes.json();
-  return claudeData.content?.[0]?.text || "";
 }
 
 function commentUsername(c) {
@@ -230,7 +134,6 @@ Réponds en JSON uniquement :
     const comment = String(item.comment || commentText(source) || "").trim();
     if (!comment) continue;
     hits.push({
-      index,
       username,
       comment,
       reason: String(item.reason || "frustration détectée").trim(),
@@ -241,25 +144,35 @@ Réponds en JSON uniquement :
   return hits;
 }
 
-async function generateSnipingDm(target, comment, brand = {}) {
+async function analyzeMapsIndependence(place) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return "";
+  if (!apiKey) return null;
 
-  const prompt = `Tu es Sébastien, fondateur de Vendizi (vendizi.fr).
-${brandPromptLines(brand)}
-Cet artisan vient de commenter sur la page de ${target} en disant : "${comment}"
-Il exprime clairement une frustration avec sa solution actuelle.
+  const title = String(place.title || place.name || "").trim();
+  const category = String(place.categoryName || place.category || "").trim();
+  const address = String(place.address || "").trim();
+  const website = place.website ? String(place.website) : "aucun";
+  const score = place.totalScore ?? "?";
+  const reviews = place.reviewsCount ?? 0;
 
-Rédige un DM Instagram court, humain et bienveillant qui :
-1. Mentionne que tu as vu son commentaire (sans être flippant)
-2. Empathise avec sa galère
-3. Amène l'histoire de Christina et tinaluxe.fr naturellement
-4. Propose une place de pionnier (1er mois offert)
-5. Termine par une question ouverte
+  const claudePrompt = `Tu es un assistant commercial pour un artisan français.
 
-Règles : pas de jargon marketing, tutoiement ou vouvoiement selon le ton du commentaire, max 5 phrases, émojis discrets (max 2).
+Voici la fiche Google Maps d'un établissement :
+Nom : ${title}
+Catégorie : ${category}
+Adresse : ${address}
+Site web : ${website}
+Note Google : ${score}/5 (${reviews} avis)
 
-Réponds uniquement avec le message DM.`;
+Détermine si c'est un établissement INDÉPENDANT (pas une chaîne nationale/internationale)
+   → indépendant si : nom unique, pas de numéro dans le nom, site web artisanal
+   → chaîne si : Yves Rocher, L'Occitane, The Body Shop, etc.
+
+Réponds en JSON uniquement :
+{
+  "is_independent": true/false,
+  "reason": "explication courte"
+}`;
 
   const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -270,19 +183,25 @@ Réponds uniquement avec le message DM.`;
     },
     body: JSON.stringify({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 400,
-      messages: [{ role: "user", content: prompt }],
+      max_tokens: 300,
+      messages: [{ role: "user", content: claudePrompt }],
     }),
   });
 
   if (!claudeRes.ok) {
     const errText = await claudeRes.text().catch(() => "");
-    console.error("Claude sniping DM error:", claudeRes.status, errText);
-    return "";
+    console.error("Claude maps analysis error:", claudeRes.status, errText);
+    return null;
   }
 
   const claudeData = await claudeRes.json();
-  return String(claudeData.content?.[0]?.text || "").trim();
+  const parsed = parseJsonObject(String(claudeData.content?.[0]?.text || ""));
+  if (!parsed) return null;
+
+  return {
+    is_independent: Boolean(parsed.is_independent),
+    reason: String(parsed.reason || "").trim(),
+  };
 }
 
 function extractPostUrl(post) {
@@ -303,6 +222,10 @@ export function missingKeysReply() {
       },
     };
   }
+  return null;
+}
+
+export function missingClaudeReply() {
   if (!process.env.ANTHROPIC_API_KEY) {
     return {
       status: 500,
@@ -319,7 +242,6 @@ export async function runInstagramBioProspection(body) {
     : [];
   const min_followers = Number(body.min_followers) || 1000;
   const max_followers = Number(body.max_followers) || 15000;
-  const brand = brandFromBody(body);
 
   if (keywords.length === 0) {
     return {
@@ -364,15 +286,8 @@ export async function runInstagramBioProspection(body) {
     };
   }
 
-  const filtered = results.filter((p) => {
-    const followers = Number(
-      p.followerCount ?? p.followersCount ?? p.followers ?? 0
-    );
-    return followers >= min_followers && followers <= max_followers;
-  });
-
-  const analyzed = await Promise.all(
-    filtered.map(async (profile) => {
+  const analyzed = results
+    .map((profile) => {
       const username = String(profile.username || "");
       const followers = Number(
         profile.followerCount ?? profile.followersCount ?? profile.followers ?? 0
@@ -407,8 +322,6 @@ export async function runInstagramBioProspection(body) {
         siteUrl.includes("bio.link") ||
         siteUrl.includes("stan.store");
 
-      const dm = await generateDm(profile, siteUrl, brand);
-
       return {
         username,
         full_name: String(profile.fullName ?? profile.full_name ?? username),
@@ -417,11 +330,12 @@ export async function runInstagramBioProspection(body) {
         website: siteRaw ? String(siteRaw) : null,
         instagram_url: `https://instagram.com/${username}`,
         priority: isHighPriority ? "haute" : "normale",
-        dm_generated: dm,
         status: "à contacter",
       };
     })
-  );
+    .filter(
+      (p) => p.followers >= min_followers && p.followers <= max_followers
+    );
 
   analyzed.sort((a, b) => {
     if (a.priority === "haute" && b.priority !== "haute") return -1;
@@ -443,7 +357,6 @@ export async function runCommentSniping(body) {
         .filter(Boolean)
     : [];
   const maxComments = Number(body.maxComments) || 200;
-  const brand = brandFromBody(body);
 
   if (targets.length === 0) {
     return {
@@ -483,9 +396,7 @@ export async function runCommentSniping(body) {
     targets.length * 10
   );
 
-  const postUrls = [
-    ...new Set(posts.map(extractPostUrl).filter(Boolean)),
-  ];
+  const postUrls = [...new Set(posts.map(extractPostUrl).filter(Boolean))];
   console.log(`Posts URLs récupérées: ${postUrls.length}`);
 
   if (postUrls.length === 0) {
@@ -529,25 +440,13 @@ export async function runCommentSniping(body) {
   );
   console.log(`Commentaires récupérés: ${allComments.length}`);
 
-  const usable = allComments.filter(
-    (c) => commentText(c) && commentUsername(c)
-  );
-
-  if (usable.length === 0) {
-    return {
-      status: 200,
-      body: {
-        prospects: [],
-        total: 0,
-        scanned: 0,
-        message: "Aucun commentaire trouvé ou run encore en cours",
-      },
-    };
-  }
-
   const frustrated = [];
-  for (let i = 0; i < usable.length; i += 20) {
-    const hits = await filterFrustratedBatch(usable.slice(i, i + 20), targets);
+  for (let i = 0; i < allComments.length; i += 20) {
+    const batch = allComments
+      .slice(i, i + 20)
+      .filter((c) => commentText(c) && commentUsername(c));
+    if (batch.length === 0) continue;
+    const hits = await filterFrustratedBatch(batch, targets);
     frustrated.push(...hits);
   }
 
@@ -559,24 +458,20 @@ export async function runCommentSniping(body) {
     return true;
   });
 
-  const frustratedWithDm = await Promise.all(
-    uniqueFrustrated.map(async (f) => {
-      const dm = await generateSnipingDm(f.target, f.comment, brand);
-      const username = f.username.replace(/^@/, "");
-      return {
-        username,
-        comment: f.comment,
-        reason: f.reason,
-        urgency: f.urgency,
-        target: f.target,
-        dm_generated: dm,
-        status: "à contacter",
-        instagram_url: `https://instagram.com/${username}`,
-      };
-    })
-  );
+  const prospects = uniqueFrustrated.map((f) => {
+    const username = f.username.replace(/^@/, "");
+    return {
+      username,
+      comment: f.comment,
+      reason: f.reason,
+      urgency: f.urgency,
+      target: f.target,
+      status: "à contacter",
+      instagram_url: `https://instagram.com/${username}`,
+    };
+  });
 
-  frustratedWithDm.sort((a, b) => {
+  prospects.sort((a, b) => {
     if (a.urgency === "haute" && b.urgency !== "haute") return -1;
     if (b.urgency === "haute" && a.urgency !== "haute") return 1;
     return 0;
@@ -585,8 +480,8 @@ export async function runCommentSniping(body) {
   return {
     status: 200,
     body: {
-      prospects: frustratedWithDm,
-      total: frustratedWithDm.length,
+      prospects,
+      total: prospects.length,
       scanned: allComments.length,
       debug: {
         posts_found: postUrls.length,
@@ -594,77 +489,6 @@ export async function runCommentSniping(body) {
         frustrated_raw: frustrated.length,
       },
     },
-  };
-}
-
-async function analyzeMapsPlace(place, brand = {}) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return null;
-
-  const title = String(place.title || place.name || "").trim();
-  const category = String(place.categoryName || place.category || "").trim();
-  const address = String(place.address || "").trim();
-  const website = place.website ? String(place.website) : "aucun";
-  const score = place.totalScore ?? "?";
-  const reviews = place.reviewsCount ?? 0;
-
-  const claudePrompt = `Tu es un assistant commercial pour un artisan français.
-
-${brandPromptLines(brand)}
-
-Voici la fiche Google Maps d'un établissement :
-Nom : ${title}
-Catégorie : ${category}
-Adresse : ${address}
-Site web : ${website}
-Note Google : ${score}/5 (${reviews} avis)
-
-Ta mission :
-1. Détermine si c'est un établissement INDÉPENDANT (pas une chaîne nationale/internationale)
-   → indépendant si : nom unique, pas de numéro dans le nom, site web artisanal
-   → chaîne si : Yves Rocher, L'Occitane, The Body Shop, etc.
-2. Si indépendant, génère un script d'approche COURT pour proposer un partenariat :
-   → Version EMAIL (3 phrases max)
-   → Version TÉLÉPHONE (2 phrases max, naturel et chaleureux)
-
-Réponds en JSON :
-{
-  "is_independent": true/false,
-  "reason": "explication courte",
-  "email_script": "...",
-  "phone_script": "..."
-}`;
-
-  const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 500,
-      messages: [{ role: "user", content: claudePrompt }],
-    }),
-  });
-
-  if (!claudeRes.ok) {
-    const errText = await claudeRes.text().catch(() => "");
-    console.error("Claude maps analysis error:", claudeRes.status, errText);
-    return null;
-  }
-
-  const claudeData = await claudeRes.json();
-  const text = String(claudeData.content?.[0]?.text || "");
-  const parsed = parseJsonObject(text);
-  if (!parsed) return null;
-
-  return {
-    is_independent: Boolean(parsed.is_independent),
-    reason: String(parsed.reason || "").trim(),
-    email_script: String(parsed.email_script || "").trim(),
-    phone_script: String(parsed.phone_script || "").trim(),
   };
 }
 
@@ -677,7 +501,6 @@ export async function runGoogleMapsProspection(body) {
     40,
     Math.max(10, Number(body.max_results) || 20)
   );
-  const brand = brandFromBody(body);
 
   if (!business_type || !location) {
     return {
@@ -737,7 +560,7 @@ export async function runGoogleMapsProspection(body) {
     const name = String(place.title || place.name || "").trim();
     if (!name) continue;
 
-    const analysis = await analyzeMapsPlace(place, brand);
+    const analysis = await analyzeMapsIndependence(place);
     if (!analysis?.is_independent) continue;
 
     const phone = place.phone
@@ -754,9 +577,7 @@ export async function runGoogleMapsProspection(body) {
       rating: typeof place.totalScore === "number" ? place.totalScore : null,
       reviews_count: Number(place.reviewsCount) || 0,
       category: String(place.categoryName || place.category || "").trim(),
-      reason: analysis.reason,
-      email_script: analysis.email_script,
-      phone_script: analysis.phone_script,
+      reason: analysis.reason || "établissement indépendant",
       status: "à contacter",
       maps_url: place.url ? String(place.url) : null,
     });

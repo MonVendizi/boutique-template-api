@@ -18,6 +18,7 @@ import { checkAdmin, resolveValidAdminPassword } from "../lib/adminAuth.js";
 import { notifyIndexNow } from "../lib/indexnow.js";
 import {
   missingKeysReply,
+  missingClaudeReply,
   runInstagramBioProspection,
   runCommentSniping,
   runGoogleMapsProspection,
@@ -1450,6 +1451,10 @@ export default async function adminRoutes(fastify) {
 
     const missing = missingKeysReply();
     if (missing) return reply.code(missing.status).send(missing.body);
+    const missingClaude = missingClaudeReply();
+    if (missingClaude) {
+      return reply.code(missingClaude.status).send(missingClaude.body);
+    }
 
     try {
       const result = await runCommentSniping(request.body || {});
@@ -1467,6 +1472,10 @@ export default async function adminRoutes(fastify) {
 
     const missing = missingKeysReply();
     if (missing) return reply.code(missing.status).send(missing.body);
+    const missingClaude = missingClaudeReply();
+    if (missingClaude) {
+      return reply.code(missingClaude.status).send(missingClaude.body);
+    }
 
     try {
       const result = await runGoogleMapsProspection(request.body || {});

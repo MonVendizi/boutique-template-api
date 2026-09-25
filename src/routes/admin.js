@@ -27,6 +27,15 @@ import {
 const __adminDir = path.dirname(fileURLToPath(import.meta.url));
 const __apiRoot = path.join(__adminDir, "../..");
 
+function serializeLandingPageConfig(config) {
+  const c = config && typeof config === "object" ? { ...config } : {};
+  return JSON.stringify({
+    ...c,
+    hero_image: c.hero_image || "",
+    hero_image_mobile: c.hero_image_mobile || "",
+  });
+}
+
 function runMigrations() {
   execSync("node scripts/migrate-brand-settings.js", {
     stdio: "inherit",
@@ -375,7 +384,7 @@ export default async function adminRoutes(fastify) {
           p.badge || null,
           Number(p.sort_order) || 0,
           Boolean(p.landing_page_enabled),
-          JSON.stringify(p.landing_page_config || {}),
+          serializeLandingPageConfig(p.landing_page_config),
           Boolean(p.has_variants),
           p.variant_type || "size",
         ]
@@ -461,7 +470,7 @@ export default async function adminRoutes(fastify) {
         p.badge || null,
         Number(p.sort_order) || 0,
         Boolean(p.landing_page_enabled),
-        JSON.stringify(p.landing_page_config || {}),
+        serializeLandingPageConfig(p.landing_page_config),
       ];
 
       if (priceCents !== undefined) {

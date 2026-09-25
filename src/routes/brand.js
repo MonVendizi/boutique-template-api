@@ -1,4 +1,5 @@
 import pool from "../db/pool.js";
+import { checkAdmin } from "../lib/adminAuth.js";
 import { notifyIndexNow } from "../lib/indexnow.js";
 
 export default async function brandRoutes(fastify) {

@@ -2,10 +2,7 @@ import pool from "../db/pool.js";
 import { checkAdmin } from "../lib/adminAuth.js";
 import { sendGoogleReviewRequestEmail } from "../lib/email.js";
 import { getGoogleReviewUrl } from "../lib/settings.js";
-
-const FRONTEND_URL = process.env.FRONTEND_URL || "https://maboutique.fr";
-const BRAND_NAME = process.env.BRAND_NAME || "Ma Boutique";
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@maboutique.fr";
+import { getBrandName } from "../lib/brandSettings.js";
 
 function publicReview(row) {
   return {
@@ -66,13 +63,15 @@ export default async function reviewsRoutes(fastify) {
     const order = rows[0];
     const items = Array.isArray(order.items) ? order.items : [];
     const first = items[0] || {};
+    const brandName = first.name ? "" : await getBrandName();
 
     return {
       order_id: order.id,
       customer_name: order.customer_name,
       customer_email: order.customer_email,
       product_slug: first.slug || "",
-      product_name: first.name || `votre produit ${BRAND_NAME}`,
+      product_name:
+        first.name || (brandName ? `votre produit ${brandName}` : "votre produit"),
     };
   });
 

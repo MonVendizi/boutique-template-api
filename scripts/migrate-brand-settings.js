@@ -104,6 +104,7 @@ const defaults = [
   ["seo_title_default", "Ma Boutique — Boutique artisanale en ligne", "text", "seo", "Title SEO"],
   ["seo_description_default", "Découvrez nos produits artisanaux.", "text", "seo", "Meta description"],
   ["seo_og_image", "", "image", "seo", "Image OpenGraph"],
+  ["google_site_verification", "", "text", "seo", "Google Search Console"],
 
   // Checkout
   ["shipping_cents", "490", "number", "checkout", "Frais de port (centimes)"],

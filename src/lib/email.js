@@ -15,65 +15,83 @@ async function getBrandSettings() {
     result.rows.forEach((r) => {
       s[r.key] = r.value;
     });
+    const brandName = (s.brand_name || "").trim() || "Votre boutique";
     return {
-      brandName: s.brand_name || "Ma Boutique",
+      brandName,
       tagline: s.brand_tagline || "",
       logoUrl: s.brand_logo_url || "",
-      senderName: s.email_sender_name || "Ma Boutique",
-      replyTo: s.email_reply_to || "contact@maboutique.fr",
+      senderName: (s.email_sender_name || "").trim() || brandName,
+      replyTo: (s.email_reply_to || "").trim(),
       signature: s.email_signature || "L'équipe",
       colorPrimary: s.color_primary || "#D4AF37",
       colorDark: s.color_dark || "#0B0B0B",
-      siteUrl: s.seo_site_url || "https://maboutique.fr",
+      siteUrl: (s.seo_site_url || process.env.FRONTEND_URL || "").trim(),
       welcomePromoCode: s.welcome_promo_code || "",
       inactivePromoCode: s.inactive_promo_code || "",
     };
   } catch {
     return {
-      brandName: "Ma Boutique",
+      brandName: "Votre boutique",
       tagline: "",
       logoUrl: "",
-      senderName: "Ma Boutique",
-      replyTo: "contact@maboutique.fr",
+      senderName: "Votre boutique",
+      replyTo: "",
       signature: "L'équipe",
       colorPrimary: "#D4AF37",
       colorDark: "#0B0B0B",
-      siteUrl: "https://maboutique.fr",
+      siteUrl: (process.env.FRONTEND_URL || "").trim(),
       welcomePromoCode: "",
       inactivePromoCode: "",
     };
   }
 }
 
-function emailDomain(replyTo) {
-  return replyTo?.split("@")[1] || "maboutique.fr";
+function emailDomain(brand) {
+  const fromReplyTo = brand.replyTo?.split("@")[1];
+  if (fromReplyTo) return fromReplyTo;
+  try {
+    if (brand.siteUrl) {
+      return new URL(brand.siteUrl).hostname.replace(/^www\./, "");
+    }
+  } catch {
+    // ignore
+  }
+  throw new Error(
+    "Domaine d'envoi introuvable : renseignez email_reply_to ou seo_site_url dans brand_settings"
+  );
 }
 
 function emailFrom(brand, prefix = "commande") {
-  return `${brand.senderName} <${prefix}@${emailDomain(brand.replyTo)}>`;
+  return `${brand.senderName} <${prefix}@${emailDomain(brand)}>`;
 }
 
 /** Bloc HTML partenaire pour emails de confirmation commande */
 async function getPartnerEmailBlock() {
   try {
     const { rows } = await pool.query(`
-      SELECT key, value FROM brand_settings WHERE category = 'partner'
+      SELECT key, value FROM brand_settings
+      WHERE category = 'partner'
+         OR key IN ('partner_secondary_name', 'partner_secondary_url')
     `);
     const config = {};
     for (const row of rows) config[row.key] = row.value;
 
+    const secondaryName = String(config.partner_secondary_name || "").trim();
+    const secondaryUrl = String(config.partner_secondary_url || "").trim();
     const jourxEnabled = config.partner_jourx_enabled === "true";
-    const tinaluxeEnabled = config.partner_tinaluxe_enabled === "true";
-    if (!jourxEnabled && !tinaluxeEnabled) return "";
+    const secondaryEnabled =
+      (config.partner_secondary_enabled ?? config.partner_tinaluxe_enabled) ===
+        "true" && Boolean(secondaryUrl);
+    if (!jourxEnabled && !secondaryEnabled) return "";
 
     const showJourX =
-      jourxEnabled && tinaluxeEnabled
+      jourxEnabled && secondaryEnabled
         ? new Date().getDate() % 2 === 0
         : jourxEnabled;
-    const showTinaLuxe =
-      jourxEnabled && tinaluxeEnabled
+    const showSecondary =
+      jourxEnabled && secondaryEnabled
         ? new Date().getDate() % 2 !== 0
-        : tinaluxeEnabled;
+        : secondaryEnabled;
 
     if (showJourX) {
       return `
@@ -90,16 +108,16 @@ async function getPartnerEmailBlock() {
       `;
     }
 
-    if (showTinaLuxe) {
+    if (showSecondary) {
       return `
         <div style="margin: 24px 0; padding: 16px 20px; background: #1A0F00;
                     border-radius: 8px; border-left: 4px solid #D4AF37; text-align: center;">
           <p style="color: #F5F0E8; font-size: 13px; margin: 0 0 8px;">
-            ✨ Prenez soin de vous avec des cosmétiques naturels premium
+            ✨ Découvrez aussi notre partenaire
           </p>
-          <a href="https://tinaluxe.fr?utm_source=vendizi&utm_medium=email_confirmation&utm_campaign=partner"
+          <a href="${escapeHtml(secondaryUrl)}"
              style="color: #D4AF37; font-weight: 700; font-size: 14px; text-decoration: none;">
-            TinaLuxe, beauté naturelle →
+            ${escapeHtml(secondaryName || "Notre partenaire")} →
           </a>
         </div>
       `;
@@ -364,7 +382,7 @@ async function sendBrandedEmail({ to, subject, html, brand: brandOverride }) {
 
   const { data, error } = await resend.emails.send({
     from: brand.forcedFrom || emailFrom(brand),
-    replyTo: brand.replyTo,
+    replyTo: brand.replyTo || undefined,
     to,
     subject,
     html,
@@ -990,8 +1008,8 @@ export async function sendNewsletterEmail({
   });
 
   const { data, error } = await resend.emails.send({
-    from: `${brand.signature} — ${brand.brandName} <contact@${emailDomain(brand.replyTo)}>`,
-    replyTo: brand.replyTo,
+    from: `${brand.signature} — ${brand.brandName} <contact@${emailDomain(brand)}>`,
+    replyTo: brand.replyTo || undefined,
     to,
     subject,
     html,
@@ -1235,7 +1253,7 @@ export async function sendCrossSellEmail({
 
   const { data, error } = await resend.emails.send({
     from: emailFrom(brand),
-    replyTo: brand.replyTo,
+    replyTo: brand.replyTo || undefined,
     to: email,
     subject: `${subjectPrenom}, les clientes qui ont acheté ${purchasedItems?.[0]?.name || `votre produit ${brand.brandName}`} adorent aussi... 💛`,
     html: `
@@ -1381,7 +1399,7 @@ export async function sendAbandonedCartEmail({
 
   const { data, error } = await resend.emails.send({
     from: emailFrom(brand),
-    replyTo: brand.replyTo,
+    replyTo: brand.replyTo || undefined,
     to: email,
     subject: `${first}, vous avez oublié quelque chose ✨`,
     html: `
@@ -1460,7 +1478,7 @@ export async function sendLoyaltyPointsEmail({
 
   const { data, error } = await resend.emails.send({
     from: emailFrom(brand),
-    replyTo: brand.replyTo,
+    replyTo: brand.replyTo || undefined,
     to: email,
     subject: `+${pointsEarned} points fidélité ${brand.brandName} ✨`,
     html: `
@@ -1520,7 +1538,7 @@ export async function sendLoyaltyRewardEmail({
 
   const { data, error } = await resend.emails.send({
     from: emailFrom(brand),
-    replyTo: brand.replyTo,
+    replyTo: brand.replyTo || undefined,
     to: email,
     subject: `Votre bon ${brand.brandName} de ${euros} € est prêt 🎁`,
     html: `
@@ -1581,7 +1599,7 @@ export async function sendAffiliateRecapEmail({
 
   const { data, error } = await resend.emails.send({
     from: emailFrom(brand),
-    replyTo: brand.replyTo,
+    replyTo: brand.replyTo || undefined,
     to: email,
     subject: `Votre récapitulatif ${brand.brandName} — ${month}`,
     html: `
@@ -1792,7 +1810,13 @@ export async function sendPartnerChangeNotification({
   placement,
 }) {
   const settings = await getBrandSettings();
-  const brandLabel = brand === "jourx" ? "JourX" : "TinaLuxe";
+  let brandLabel = "JourX";
+  if (brand !== "jourx") {
+    const { rows } = await pool.query(
+      `SELECT value FROM brand_settings WHERE key = 'partner_secondary_name' LIMIT 1`
+    );
+    brandLabel = String(rows[0]?.value || "").trim() || "Partenaire secondaire";
+  }
 
   return sendBrandedEmail({
     to: "contact@vendizi.fr",

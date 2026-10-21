@@ -19,6 +19,7 @@ import analyticsRoutes from "./routes/analytics.js";
 import settingsRoutes from "./routes/settings.js";
 import brandRoutes from "./routes/brand.js";
 import tenantsRoutes from "./routes/tenants.js";
+import indexingRoutes from "./routes/indexing.js";
 import pool from "./db/pool.js";
 import {
   sendAbandonedCartEmail,
@@ -91,6 +92,7 @@ await fastify.register(analyticsRoutes);
 await fastify.register(settingsRoutes);
 await fastify.register(brandRoutes);
 await fastify.register(tenantsRoutes);
+await fastify.register(indexingRoutes);
 
 async function processCalendarReminders() {
   try {

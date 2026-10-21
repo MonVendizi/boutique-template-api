@@ -6,8 +6,8 @@ import {
 import { getLoyaltyConfig } from "./loyalty.js";
 import { isBotEmail } from "../lib/botEmail.js";
 import { checkAdmin } from "../lib/adminAuth.js";
+import { getSiteUrl } from "../lib/brandSettings.js";
 
-const FRONTEND_URL = process.env.FRONTEND_URL || "https://maboutique.fr";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ipAttempts = new Map();
 
@@ -112,7 +112,11 @@ export default async function newsletterRoutes(fastify) {
   fastify.get("/newsletter/unsubscribe", async (request, reply) => {
     const token = String(request.query?.token || "").trim();
     const emailParam = String(request.query?.email || "").trim();
-    const successUrl = `${FRONTEND_URL.replace(/\/$/, "")}/newsletter/unsubscribe?success=true`;
+    const siteUrl = await getSiteUrl();
+    const done = () =>
+      siteUrl
+        ? reply.redirect(`${siteUrl}/newsletter/unsubscribe?success=true`)
+        : reply.send({ success: true });
 
     try {
       if (emailParam) {
@@ -128,7 +132,7 @@ export default async function newsletterRoutes(fastify) {
           [email]
         );
 
-        return reply.redirect(successUrl);
+        return done();
       }
 
       if (token) {
@@ -139,7 +143,7 @@ export default async function newsletterRoutes(fastify) {
           [token]
         );
 
-        return reply.redirect(successUrl);
+        return done();
       }
 
       return reply.code(400).send({ error: "Paramètre manquant" });

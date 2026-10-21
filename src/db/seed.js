@@ -3,7 +3,7 @@ import pool from "./pool.js";
 
 dotenv.config();
 
-const BRAND_NAME = process.env.BRAND_NAME || "Ma Boutique";
+const BRAND_NAME = process.env.BRAND_NAME || "Votre boutique";
 const WELCOME_PROMO_CODE = process.env.WELCOME_PROMO_CODE || "BIENVENUE10";
 const INACTIVE_PROMO_CODE = process.env.INACTIVE_PROMO_CODE || "RETOUR10";
 

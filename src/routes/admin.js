@@ -1218,6 +1218,8 @@ export default async function adminRoutes(fastify) {
       jourx_placement,
       tinaluxe_enabled,
       tinaluxe_placement,
+      secondary_enabled,
+      secondary_placement,
       category_conflict,
       discount_amount,
       discounts,
@@ -1226,20 +1228,20 @@ export default async function adminRoutes(fastify) {
     const updates = [
       ["partner_jourx_enabled", String(jourx_enabled ?? false)],
       ["partner_jourx_placement", jourx_placement || "cart"],
-      ["partner_tinaluxe_enabled", String(tinaluxe_enabled ?? false)],
-      ["partner_tinaluxe_placement", tinaluxe_placement || "cart"],
+      ["partner_tinaluxe_enabled", String((secondary_enabled ?? tinaluxe_enabled) ?? false)],
+      ["partner_tinaluxe_placement", secondary_placement || tinaluxe_placement || "cart"],
       ["partner_category_conflict", String(category_conflict ?? false)],
       ["partner_discount_amount", String(discount_amount ?? 0)],
       [
         "partner_activated_at",
-        jourx_enabled || tinaluxe_enabled ? new Date().toISOString() : "",
+        jourx_enabled || secondary_enabled || tinaluxe_enabled ? new Date().toISOString() : "",
       ],
     ];
 
     if (discounts && typeof discounts === "object") {
       for (const [key, value] of Object.entries(discounts)) {
         if (
-          !/^(jourx|tinaluxe)_(cart|confirmation|not_found|all)_discount$/.test(
+          !/^(jourx|tinaluxe|secondary)_(cart|confirmation|not_found|all)_discount$/.test(
             key
           )
         ) {
@@ -1277,7 +1279,7 @@ export default async function adminRoutes(fastify) {
     for (const [rawKey, rawValue] of entries) {
       const key = String(rawKey || "");
       if (
-        !/^(jourx|tinaluxe)_(cart|confirmation|not_found|all)_discount$/.test(
+        !/^(jourx|tinaluxe|secondary)_(cart|confirmation|not_found|all)_discount$/.test(
           key
         )
       ) {

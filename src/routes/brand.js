@@ -34,6 +34,36 @@ export default async function brandRoutes(fastify) {
         config[key] = value;
       }
     }
+    const pairs = [
+      ["partner_tinaluxe_enabled", "partner_secondary_enabled"],
+      ["partner_tinaluxe_placement", "partner_secondary_placement"],
+      ["tinaluxe_cart_discount", "secondary_cart_discount"],
+      ["tinaluxe_confirmation_discount", "secondary_confirmation_discount"],
+      ["tinaluxe_not_found_discount", "secondary_not_found_discount"],
+      ["tinaluxe_all_discount", "secondary_all_discount"],
+    ];
+    for (const [from, to] of pairs) {
+      if (config[to] === undefined || config[to] === null || config[to] === "") {
+        config[to] = config[from] || "";
+      }
+    }
+    const urlKeys = [
+      "partner_jourx_url",
+      "partner_secondary_name",
+      "partner_secondary_url",
+    ].filter((key) => !String(config[key] || "").trim());
+    if (urlKeys.length) {
+      const { rows: extraRows } = await pool.query(
+        `SELECT key, value FROM brand_settings WHERE key = ANY($1)`,
+        [urlKeys]
+      );
+      for (const row of extraRows) config[row.key] = row.value;
+    }
+    config.partner_jourx_url = String(config.partner_jourx_url || "").trim() || null;
+    config.partner_secondary_url =
+      String(config.partner_secondary_url || "").trim() || null;
+    config.partner_secondary_name =
+      String(config.partner_secondary_name || "").trim() || "Partenaire";
     return config;
   });
 

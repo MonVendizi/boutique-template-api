@@ -1,4 +1,5 @@
 import { BrevoClient } from "@getbrevo/brevo";
+import { getBrandName } from "./brandSettings.js";
 
 let client = null;
 
@@ -14,8 +15,6 @@ function normalizePhone(phone) {
   return String(phone || "").replace(/\s/g, "");
 }
 
-const brandName = process.env.BRAND_NAME || "Votre boutique";
-
 export async function sendSMS(message) {
   if (!process.env.BREVO_API_KEY || !process.env.ADMIN_PHONE) return;
 
@@ -23,6 +22,8 @@ export async function sendSMS(message) {
   if (!brevo) return;
 
   try {
+    const brandName =
+      (await getBrandName()) || process.env.BRAND_NAME || "Boutique";
     await brevo.transactionalSms.sendTransacSms({
       sender: brandName.slice(0, 11),
       recipient: normalizePhone(process.env.ADMIN_PHONE),

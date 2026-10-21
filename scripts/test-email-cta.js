@@ -6,14 +6,14 @@ import { Resend } from "resend";
 import { buildNewsletterHtml } from "../src/lib/email.js";
 
 const TEST_EMAIL = process.env.TEST_EMAIL || "test@example.com";
-const BRAND_NAME = process.env.BRAND_NAME || "Ma Boutique";
+const BRAND_NAME = process.env.BRAND_NAME || "Boutique test";
 const BRAND_FOUNDER = process.env.BRAND_FOUNDER || "L'équipe";
-const FRONTEND_URL = (process.env.FRONTEND_URL || "https://maboutique.fr").replace(
+const FRONTEND_URL = (process.env.FRONTEND_URL || "https://example.com").replace(
   /\/$/,
   ""
 );
 const emailDomain =
-  process.env.ADMIN_EMAIL?.split("@")[1] || "maboutique.fr";
+  process.env.ADMIN_EMAIL?.split("@")[1] || "example.com";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 

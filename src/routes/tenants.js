@@ -23,8 +23,7 @@ function invalidateLookupCache(domain) {
 
 /** Purge le cache Next/Vercel du lookup tenant (revalidateTag + revalidatePath). */
 async function purgeFrontendTenantCache(domain) {
-  const secret =
-    process.env.ADMIN_PASSWORD || process.env.NEXT_PUBLIC_ADMIN_PASSWORD;
+  const secret = process.env.ADMIN_PASSWORD;
   if (!secret) return;
 
   const origins = new Set();

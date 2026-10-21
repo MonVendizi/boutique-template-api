@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS settings (
 INSERT INTO settings (key, value) VALUES
   ('popup_enabled', 'true'),
   ('popup_discount', '10'),
-  ('popup_title', 'Bienvenue chez TinaLuxe ✨'),
+  ('popup_title', 'Bienvenue ✨'),
   ('popup_subtitle', 'Rejoignez notre communauté et recevez'),
   ('popup_delay', '5')
 ON CONFLICT (key) DO NOTHING;

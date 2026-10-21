@@ -21,7 +21,7 @@ await pool.query(`
 
 const defaults = [
   // Identité
-  ["brand_name", "Ma Boutique", "text", "identity", "Nom de la marque"],
+  ["brand_name", "", "text", "identity", "Nom de la marque"],
   ["brand_tagline", "Votre boutique artisanale en ligne", "text", "identity", "Slogan"],
   ["brand_founder_name", "La fondatrice", "text", "identity", "Prénom fondatrice"],
   ["brand_logo_url", "", "image", "identity", "Logo URL"],
@@ -85,7 +85,7 @@ const defaults = [
 
   // Footer
   ["footer_description", "Votre boutique artisanale en ligne.", "text", "footer", "Description footer"],
-  ["footer_email", "contact@maboutique.fr", "email", "footer", "Email contact"],
+  ["footer_email", "", "email", "footer", "Email contact"],
   ["footer_instagram", "", "url", "footer", "Instagram URL"],
   ["footer_tiktok", "", "url", "footer", "TikTok URL"],
   ["footer_facebook", "", "url", "footer", "Facebook URL"],
@@ -100,11 +100,13 @@ const defaults = [
   ],
 
   // SEO
-  ["seo_site_url", "https://maboutique.fr", "url", "seo", "URL du site"],
-  ["seo_title_default", "Ma Boutique — Boutique artisanale en ligne", "text", "seo", "Title SEO"],
+  ["seo_site_url", "", "url", "seo", "URL du site"],
+  ["seo_title_default", "", "text", "seo", "Title SEO"],
   ["seo_description_default", "Découvrez nos produits artisanaux.", "text", "seo", "Meta description"],
   ["seo_og_image", "", "image", "seo", "Image OpenGraph"],
   ["google_site_verification", "", "text", "seo", "Google Search Console"],
+  ["blog_cta_text", "", "text", "seo", "Texte CTA des articles de blog"],
+  ["category_subtitles", "{}", "json", "seo", "Sous-titres par catégorie (JSON)"],
 
   // Checkout
   ["shipping_cents", "490", "number", "checkout", "Frais de port (centimes)"],
@@ -117,8 +119,8 @@ const defaults = [
   ["enable_variants", "false", "boolean", "checkout", "Activer les variantes produits"],
 
   // Emails
-  ["email_sender_name", "Ma Boutique", "text", "emails", "Nom expéditeur"],
-  ["email_reply_to", "contact@maboutique.fr", "email", "emails", "Reply-to"],
+  ["email_sender_name", "", "text", "emails", "Nom expéditeur"],
+  ["email_reply_to", "", "email", "emails", "Reply-to"],
   ["email_signature", "L'équipe", "text", "emails", "Signature"],
 
   // Légal
@@ -164,21 +166,21 @@ const defaults = [
     "false",
     "boolean",
     "partner",
-    "Pub TinaLuxe activée",
+    "Pub partenaire activée",
   ],
   [
     "partner_tinaluxe_placement",
     "cart",
     "string",
     "partner",
-    "Placement pub TinaLuxe : cart | confirmation | not_found | all",
+    "Placement pub partenaire : cart | confirmation | not_found | all",
   ],
   [
     "partner_category_conflict",
     "false",
     "boolean",
     "partner",
-    "Conflit catégorie TinaLuxe - masque l option",
+    "Conflit catégorie partenaire - masque l option",
   ],
   [
     "partner_discount_amount",
@@ -205,22 +207,22 @@ const defaults = [
   ],
   ["jourx_not_found_discount", "5", "number", "partner", "JourX — Page 404"],
   ["jourx_all_discount", "20", "number", "partner", "JourX — Tous"],
-  ["tinaluxe_cart_discount", "15", "number", "partner", "TinaLuxe — Panier"],
+  ["tinaluxe_cart_discount", "15", "number", "partner", "Panier partenaire"],
   [
     "tinaluxe_confirmation_discount",
     "20",
     "number",
     "partner",
-    "TinaLuxe — Confirmation",
+    "Confirmation partenaire",
   ],
   [
     "tinaluxe_not_found_discount",
     "5",
     "number",
     "partner",
-    "TinaLuxe — Page 404",
+    "Page 404 partenaire",
   ],
-  ["tinaluxe_all_discount", "25", "number", "partner", "TinaLuxe — Tous"],
+  ["tinaluxe_all_discount", "25", "number", "partner", "Tous placements partenaire"],
 ];
 
 for (const [key, value, type, category, label] of defaults) {
@@ -245,7 +247,7 @@ await pool.query(`
 await pool.query(`
   UPDATE brand_settings
   SET value = 'cart',
-      label = 'Placement pub TinaLuxe : cart | confirmation | not_found | all'
+      label = 'Placement pub partenaire : cart | confirmation | not_found | all'
   WHERE key = 'partner_tinaluxe_placement'
     AND value IN ('footer', 'sidebar');
 `);
@@ -256,7 +258,7 @@ await pool.query(`
 `);
 await pool.query(`
   UPDATE brand_settings
-  SET label = 'Placement pub TinaLuxe : cart | confirmation | not_found | all'
+  SET label = 'Placement pub partenaire : cart | confirmation | not_found | all'
   WHERE key = 'partner_tinaluxe_placement';
 `);
 

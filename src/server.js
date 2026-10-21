@@ -62,8 +62,35 @@ fastify.addContentTypeParser(
   }
 );
 
+function toOrigin(value) {
+  try {
+    return new URL(value.trim()).origin;
+  } catch {
+    return "";
+  }
+}
+
+const allowedOrigins = new Set(
+  [...(process.env.ALLOWED_ORIGINS || "").split(","), process.env.FRONTEND_URL || ""]
+    .map(toOrigin)
+    .filter(Boolean)
+);
+const isProduction = process.env.NODE_ENV === "production";
+const LOCALHOST_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+
+if (allowedOrigins.size === 0 && isProduction) {
+  fastify.log.warn("ALLOWED_ORIGINS vide : toutes les origines navigateur sont refusées");
+}
+
 await fastify.register(cors, {
-  origin: true,
+  origin(origin, cb) {
+    if (!origin) return cb(null, true);
+    if (allowedOrigins.has(origin)) return cb(null, true);
+    if (allowedOrigins.size === 0 && !isProduction && LOCALHOST_ORIGIN.test(origin)) {
+      return cb(null, true);
+    }
+    return cb(null, false);
+  },
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "x-admin-password"],
   credentials: true,

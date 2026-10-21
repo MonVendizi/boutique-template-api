@@ -6,6 +6,7 @@ import {
 } from "./promo.js";
 import { computeReferralDiscount } from "./referrals.js";
 import { isBotEmail } from "../lib/botEmail.js";
+import { getSiteUrl } from "../lib/brandSettings.js";
 
 const SHIPPING_CENTS = 490; // 4,90€
 
@@ -164,7 +165,15 @@ export default async function checkoutRoutes(fastify) {
       appliedReferral = result.referral_code;
     }
 
-    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+    const frontendUrl =
+      (await getSiteUrl()) ||
+      (process.env.NODE_ENV !== "production" ? "http://localhost:3000" : "");
+    if (!frontendUrl) {
+      return reply.code(500).send({
+        error:
+          "URL du site non configurée (brand_settings.seo_site_url ou FRONTEND_URL)",
+      });
+    }
 
     const sessionParams = {
       mode: "payment",

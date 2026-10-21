@@ -6,7 +6,7 @@ import {
 } from "../src/lib/email.js";
 
 const TEST_EMAIL = process.env.TEST_EMAIL || "test@example.com";
-const BRAND_NAME = process.env.BRAND_NAME || "Ma Boutique";
+const BRAND_NAME = process.env.BRAND_NAME || "Boutique test";
 
 const testOrder = {
   email: TEST_EMAIL,

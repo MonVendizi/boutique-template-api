@@ -19,15 +19,19 @@ await pool.query(`
   CREATE INDEX IF NOT EXISTS idx_tenants_domain ON tenants(domain);
 `);
 
-await pool.query(`
-  INSERT INTO tenants (domain, api_url, brand_name)
-  VALUES (
-    'boutique-template-eight.vercel.app',
-    'https://boutique-template-api-production.up.railway.app',
-    'Ma Boutique'
-  )
-  ON CONFLICT (domain) DO NOTHING
-`);
+const masterDomain = (process.env.MASTER_DOMAIN || "").trim();
+const masterApiUrl = (process.env.MASTER_API_URL || "").trim();
+
+if (masterDomain && masterApiUrl) {
+  await pool.query(
+    `INSERT INTO tenants (domain, api_url, brand_name)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (domain) DO NOTHING`,
+    [masterDomain, masterApiUrl, (process.env.MASTER_BRAND_NAME || "").trim()]
+  );
+} else {
+  console.log("MASTER_DOMAIN / MASTER_API_URL absents : aucun tenant initial inséré");
+}
 
 console.log("Migration tenants OK");
 await pool.end();

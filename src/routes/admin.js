@@ -376,7 +376,7 @@ export default async function adminRoutes(fastify) {
           Number(p.stock) || 0,
           JSON.stringify(p.images || []),
           JSON.stringify(p.highlights || []),
-          p.origin || "Cameroun",
+          p.origin || "",
           p.seo_title || "",
           p.seo_description || "",
           p.active !== false,
@@ -462,7 +462,7 @@ export default async function adminRoutes(fastify) {
         Number(p.stock) || 0,
         JSON.stringify(p.images || []),
         JSON.stringify(p.highlights || []),
-        p.origin || "Cameroun",
+        p.origin || "",
         p.seo_title || "",
         p.seo_description || "",
         p.active !== false,
@@ -1210,7 +1210,7 @@ export default async function adminRoutes(fastify) {
     };
   });
 
-  /** Programme partenaire (pubs JourX / TinaLuxe) */
+  /** Programme partenaires */
   fastify.put("/admin/partner", async (request, reply) => {
     if (!(await checkAdmin(request, reply))) return;
     const {

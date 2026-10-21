@@ -71,14 +71,16 @@ async function getPartnerEmailBlock() {
     const { rows } = await pool.query(`
       SELECT key, value FROM brand_settings
       WHERE category = 'partner'
-         OR key IN ('partner_secondary_name', 'partner_secondary_url')
+         OR key IN ('partner_secondary_name', 'partner_secondary_url', 'partner_jourx_url')
     `);
     const config = {};
     for (const row of rows) config[row.key] = row.value;
 
     const secondaryName = String(config.partner_secondary_name || "").trim();
     const secondaryUrl = String(config.partner_secondary_url || "").trim();
-    const jourxEnabled = config.partner_jourx_enabled === "true";
+    const jourxUrl = String(config.partner_jourx_url || "").trim();
+    const jourxEnabled =
+      config.partner_jourx_enabled === "true" && Boolean(jourxUrl);
     const secondaryEnabled =
       (config.partner_secondary_enabled ?? config.partner_tinaluxe_enabled) ===
         "true" && Boolean(secondaryUrl);
@@ -100,7 +102,7 @@ async function getPartnerEmailBlock() {
           <p style="color: #EAEAEA; font-size: 13px; margin: 0 0 8px;">
             💰 Vous venez de faire un achat — suivez votre budget avec
           </p>
-          <a href="https://jourx.fr?utm_source=vendizi&utm_medium=email_confirmation&utm_campaign=partner"
+          <a href="${escapeHtml(jourxUrl)}"
              style="color: #6C63FF; font-weight: 700; font-size: 14px; text-decoration: none;">
             JourX, l'appli budget simple →
           </a>

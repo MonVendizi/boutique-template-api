@@ -4,7 +4,7 @@ import pool from "../src/db/pool.js";
 dotenv.config();
 
 const TEST_EMAIL = process.env.TEST_EMAIL || "test@example.com";
-const BRAND_NAME = process.env.BRAND_NAME || "Ma Boutique";
+const BRAND_NAME = process.env.BRAND_NAME || "Boutique test";
 
 const {
   sendOrderDeliveredEmail,

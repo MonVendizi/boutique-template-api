@@ -1,8 +1,12 @@
 import pool from "../db/pool.js";
 import { checkAdmin } from "../lib/adminAuth.js";
 
-/** Nombre max de groupes affichés directement dans la nav (sort_order 1–4). */
+/** Nombre max de groupes affichés directement dans la nav (hors Boutique). */
 export const NAV_MAIN_GROUP_LIMIT = 3;
+
+function isBoutiqueNavGroup(name) {
+  return String(name || "").trim().toLowerCase() === "boutique";
+}
 
 function toSlug(name) {
   return String(name || "")
@@ -342,10 +346,22 @@ export default async function categoriesRoutes(fastify) {
   fastify.get("/admin/nav-groups", async (request, reply) => {
     if (!(await checkAdmin(request, reply))) return;
     const { rows } = await pool.query(NAV_GROUP_LIST_SQL);
-    return rows.map((row, index) => ({
-      ...row,
-      nav_tier: index < NAV_MAIN_GROUP_LIMIT ? "main" : "more",
-    }));
+    let mainIndex = 0;
+    return rows.map((row) => {
+      const system = isBoutiqueNavGroup(row.name);
+      let nav_tier = "main";
+      if (system) {
+        nav_tier = "boutique";
+      } else {
+        nav_tier = mainIndex < NAV_MAIN_GROUP_LIMIT ? "main" : "more";
+        mainIndex += 1;
+      }
+      return {
+        ...row,
+        nav_tier,
+        locked: system,
+      };
+    });
   });
 
   fastify.post("/admin/nav-groups", async (request, reply) => {
@@ -353,6 +369,12 @@ export default async function categoriesRoutes(fastify) {
     const name = String(request.body?.name || "").trim();
     if (!name) {
       return reply.code(400).send({ error: "Nom requis" });
+    }
+    if (isBoutiqueNavGroup(name)) {
+      return reply.code(400).send({
+        error:
+          "« Boutique » est un groupe système. Les catégories sans groupe (ou rattachées à Boutique) alimentent déjà le menu Boutique.",
+      });
     }
 
     try {
@@ -405,6 +427,19 @@ export default async function categoriesRoutes(fastify) {
       }
 
       const oldName = existing[0].name;
+      if (isBoutiqueNavGroup(oldName)) {
+        await client.query("ROLLBACK");
+        return reply.code(400).send({
+          error: "Le groupe Boutique est protégé et ne peut pas être renommé",
+        });
+      }
+      if (isBoutiqueNavGroup(name)) {
+        await client.query("ROLLBACK");
+        return reply.code(400).send({
+          error: "Impossible de renommer un groupe en « Boutique » (réservé)",
+        });
+      }
+
       if (oldName !== name) {
         await client.query(
           `UPDATE categories SET nav_group = $1 WHERE nav_group = $2`,
@@ -449,6 +484,11 @@ export default async function categoriesRoutes(fastify) {
     }
 
     const groupName = groupRows[0].name;
+    if (isBoutiqueNavGroup(groupName)) {
+      return reply.code(400).send({
+        error: "Le groupe Boutique est protégé et ne peut pas être supprimé",
+      });
+    }
 
     // Détache les catégories du groupe avant suppression
     await pool.query(

@@ -28,6 +28,7 @@
     "migrate:popup-settings": "node scripts/migrate-popup-settings.js",
     "migrate:products-display": "node scripts/migrate-products-display.js",
     "migrate:brand": "node scripts/migrate-brand-settings.js",
+    "deploy:client": "node scripts/deploy-new-client.js",
     "migrate:variants": "node scripts/migrate-variants.js",
     "migrate:tenants": "node scripts/migrate-tenants.js",
     "migrate:customers": "node scripts/migrate-customers.js",
@@ -41,7 +42,9 @@
     "@google-analytics/data": "^7.0.0",
     "dotenv": "^16.4.7",
     "fastify": "^5.2.1",
+    "otplib": "^13.5.0",
     "pg": "^8.13.3",
+    "qrcode": "^1.5.4",
     "resend": "^4.1.2",
     "stripe": "^17.7.0"
   }

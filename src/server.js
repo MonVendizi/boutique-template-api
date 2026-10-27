@@ -89,9 +89,9 @@ await fastify.register(cors, {
   origin(origin, cb) {
     if (!origin) return cb(null, true);
     if (allowedOrigins.has(origin)) return cb(null, true);
-    if (allowedOrigins.size === 0 && !isProduction && LOCALHOST_ORIGIN.test(origin)) {
-      return cb(null, true);
-    }
+    // Admin local (localhost:3000, :3002…) contre l’API Railway
+    if (LOCALHOST_ORIGIN.test(origin)) return cb(null, true);
+    if (allowedOrigins.size === 0 && !isProduction) return cb(null, true);
     return cb(null, false);
   },
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],

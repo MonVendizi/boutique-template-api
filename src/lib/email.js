@@ -1177,9 +1177,20 @@ export async function sendWelcomeJ7Email({ email, customerName }) {
       C'est le moment idéal pour découvrir nos produits et passer votre première commande.
     </p>`;
 
-  const bodyHtml = `
+  const bodyHtml = promoCode
+    ? `
     <p style="margin:0 0 20px;line-height:1.8;text-align:center;font-size:17px;color:#EAEAEA;">
       ${escapeHtml(prenom)}, ne manquez pas cette offre 💛
+    </p>
+    ${promoUrgency}
+    <p style="margin:20px 0 0;line-height:1.8;text-align:center;">
+      Rejoignez nos clientes qui ont déjà adopté ${escapeHtml(brand.brandName)}.
+    </p>
+    ${newsletterSequenceUnsubFooter(email, brand)}
+  `
+    : `
+    <p style="margin:0 0 20px;line-height:1.8;text-align:center;font-size:17px;color:#EAEAEA;">
+      ${escapeHtml(prenom)}, on pense à vous 💛
     </p>
     ${promoUrgency}
     <p style="margin:20px 0 0;line-height:1.8;text-align:center;">
@@ -1189,11 +1200,13 @@ export async function sendWelcomeJ7Email({ email, customerName }) {
   `;
 
   const html = await brandedShell({
-    badge: "DERNIÈRE CHANCE",
-    badgeColor: "#EF9A9A",
-    badgeBg: "rgba(239,154,154,.12)",
-    badgeBorder: "rgba(239,154,154,.35)",
-    title: "Votre code expire bientôt",
+    badge: promoCode ? "DERNIÈRE CHANCE" : "ON PENSE À VOUS",
+    badgeColor: promoCode ? "#EF9A9A" : brand.colorPrimary,
+    badgeBg: promoCode ? "rgba(239,154,154,.12)" : "rgba(212,175,55,.15)",
+    badgeBorder: promoCode ? "rgba(239,154,154,.35)" : "rgba(212,175,55,.35)",
+    title: promoCode
+      ? "Votre code expire bientôt"
+      : `Et si vous découvriez ${brand.brandName} ?`,
     bodyHtml,
     ctaText: "Commander maintenant →",
     ctaUrl: siteUrl(brand, "/boutique"),
@@ -1204,7 +1217,9 @@ export async function sendWelcomeJ7Email({ email, customerName }) {
 
   return sendBrandedEmail({
     to: email,
-    subject: `${prenom === "vous" ? "Ne manquez pas" : prenom + ", ne manquez pas"} cette offre 💛`,
+    subject: promoCode
+      ? `${prenom === "vous" ? "Ne manquez pas" : prenom + ", ne manquez pas"} cette offre 💛`
+      : `${prenom === "vous" ? "On a pensé" : prenom + ", on a pensé"} à vous 💛`,
     html,
     brand,
   });

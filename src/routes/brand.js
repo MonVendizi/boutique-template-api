@@ -106,6 +106,30 @@ export default async function brandRoutes(fastify) {
       for (const [key, value] of Object.entries(updates)) {
         const strValue =
           typeof value === "object" ? JSON.stringify(value) : String(value);
+
+        // Codes auto newsletter / inactifs : activer/désactiver le vrai code panier
+        if (key === "welcome_promo_code" || key === "inactive_promo_code") {
+          const prevRes = await pool.query(
+            `SELECT value FROM brand_settings WHERE key = $1`,
+            [key]
+          );
+          const prevCode = String(prevRes.rows[0]?.value || "").trim();
+          const nextCode = strValue.trim();
+
+          if (prevCode && prevCode.toUpperCase() !== nextCode.toUpperCase()) {
+            await pool.query(
+              `UPDATE promo_codes SET active = false WHERE UPPER(code) = UPPER($1)`,
+              [prevCode]
+            );
+          }
+          if (nextCode) {
+            await pool.query(
+              `UPDATE promo_codes SET active = true WHERE UPPER(code) = UPPER($1)`,
+              [nextCode]
+            );
+          }
+        }
+
         await pool.query(
           `
       INSERT INTO brand_settings (key, value, updated_at)

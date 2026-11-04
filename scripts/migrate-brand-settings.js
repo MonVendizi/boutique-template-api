@@ -56,6 +56,7 @@ const defaults = [
 
   // ADN
   ["adn_section_title", "Notre histoire", "text", "home", "Titre section ADN"],
+  ["adn_page_title", "", "text", "home", "Titre page À propos"],
   ["adn_section_subtitle", "Qui sommes-nous ?", "text", "home", "Sous-titre ADN"],
   ["adn_image_url", "", "image", "home", "Photo fondatrice"],
   ["adn_image_alt", "Photo de la fondatrice", "text", "home", "Alt image ADN"],
@@ -152,14 +153,14 @@ const defaults = [
   ["ga4_measurement_id", "", "text", "tracking", "Google Analytics 4 ID"],
   ["google_business_url", "", "text", "tracking", "Lien Google My Business"],
 
-  // Programme partenaire
+  // Programme partenaire (hors panier / paiement — confirmation + 404)
   ["partner_jourx_enabled", "false", "boolean", "partner", "Pub JourX activée"],
   [
     "partner_jourx_placement",
-    "cart",
+    "confirmation",
     "string",
     "partner",
-    "Placement pub JourX : cart | confirmation | not_found | all",
+    "Placement pub JourX : confirmation | not_found | all",
   ],
   [
     "partner_tinaluxe_enabled",
@@ -170,10 +171,10 @@ const defaults = [
   ],
   [
     "partner_tinaluxe_placement",
-    "cart",
+    "confirmation",
     "string",
     "partner",
-    "Placement pub partenaire : cart | confirmation | not_found | all",
+    "Placement pub partenaire : confirmation | not_found | all",
   ],
   [
     "partner_category_conflict",
@@ -196,33 +197,72 @@ const defaults = [
     "partner",
     "Date activation programme partenaire",
   ],
+  [
+    "partner_jourx_url",
+    "https://jourx.fr",
+    "string",
+    "partner",
+    "URL destination pub JourX",
+  ],
+  [
+    "partner_secondary_url",
+    "https://tinaluxe.fr",
+    "string",
+    "partner",
+    "URL destination pub partenaire secondaire",
+  ],
+  [
+    "partner_secondary_name",
+    "TinaLuxe",
+    "string",
+    "partner",
+    "Nom affiché partenaire secondaire",
+  ],
   // Grille des réductions (synchro dashboard Vendizi)
-  ["jourx_cart_discount", "10", "number", "partner", "JourX — Panier"],
+  ["jourx_cart_discount", "10", "number", "partner", "JourX — Panier (legacy)"],
   [
     "jourx_confirmation_discount",
+    "10",
+    "number",
+    "partner",
+    "JourX — Confirmation commande",
+  ],
+  ["jourx_not_found_discount", "5", "number", "partner", "JourX — Page 404"],
+  [
+    "jourx_all_discount",
+    "12",
+    "number",
+    "partner",
+    "JourX — Confirmation + 404",
+  ],
+  [
+    "tinaluxe_cart_discount",
     "15",
     "number",
     "partner",
-    "JourX — Confirmation",
+    "TinaLuxe — Panier (legacy)",
   ],
-  ["jourx_not_found_discount", "5", "number", "partner", "JourX — Page 404"],
-  ["jourx_all_discount", "20", "number", "partner", "JourX — Tous"],
-  ["tinaluxe_cart_discount", "15", "number", "partner", "Panier partenaire"],
   [
     "tinaluxe_confirmation_discount",
-    "20",
+    "15",
     "number",
     "partner",
-    "Confirmation partenaire",
+    "TinaLuxe — Confirmation commande",
   ],
   [
     "tinaluxe_not_found_discount",
     "5",
     "number",
     "partner",
-    "Page 404 partenaire",
+    "TinaLuxe — Page 404",
   ],
-  ["tinaluxe_all_discount", "25", "number", "partner", "Tous placements partenaire"],
+  [
+    "tinaluxe_all_discount",
+    "18",
+    "number",
+    "partner",
+    "TinaLuxe — Confirmation + 404",
+  ],
 ];
 
 for (const [key, value, type, category, label] of defaults) {
@@ -236,30 +276,42 @@ for (const [key, value, type, category, label] of defaults) {
   );
 }
 
-// Migration placements partenaire footer/sidebar → cart
+// Placements legacy (panier / footer / sidebar) → confirmation
 await pool.query(`
   UPDATE brand_settings
-  SET value = 'cart',
-      label = 'Placement pub JourX : cart | confirmation | not_found | all'
-  WHERE key = 'partner_jourx_placement'
-    AND value IN ('footer', 'sidebar');
+  SET value = 'confirmation',
+      label = 'Placement pub JourX : confirmation | not_found | all',
+      updated_at = NOW()
+  WHERE key IN ('partner_jourx_placement', 'partner_tinaluxe_placement')
+    AND value IN ('cart', 'footer', 'sidebar', '');
 `);
 await pool.query(`
   UPDATE brand_settings
-  SET value = 'cart',
-      label = 'Placement pub partenaire : cart | confirmation | not_found | all'
-  WHERE key = 'partner_tinaluxe_placement'
-    AND value IN ('footer', 'sidebar');
-`);
-await pool.query(`
-  UPDATE brand_settings
-  SET label = 'Placement pub JourX : cart | confirmation | not_found | all'
+  SET label = 'Placement pub JourX : confirmation | not_found | all',
+      updated_at = NOW()
   WHERE key = 'partner_jourx_placement';
 `);
 await pool.query(`
   UPDATE brand_settings
-  SET label = 'Placement pub partenaire : cart | confirmation | not_found | all'
+  SET label = 'Placement pub partenaire : confirmation | not_found | all',
+      updated_at = NOW()
   WHERE key = 'partner_tinaluxe_placement';
+`);
+
+// URLs partenaires : remplir si vides (toutes boutiques)
+await pool.query(`
+  INSERT INTO brand_settings (key, value, type, category, label)
+  VALUES
+    ('partner_jourx_url', 'https://jourx.fr', 'string', 'partner', 'URL destination pub JourX'),
+    ('partner_secondary_url', 'https://tinaluxe.fr', 'string', 'partner', 'URL destination pub partenaire secondaire'),
+    ('partner_secondary_name', 'TinaLuxe', 'string', 'partner', 'Nom affiché partenaire secondaire')
+  ON CONFLICT (key) DO UPDATE
+  SET value = CASE
+        WHEN brand_settings.value IS NULL OR TRIM(brand_settings.value) = ''
+        THEN EXCLUDED.value
+        ELSE brand_settings.value
+      END,
+      updated_at = NOW()
 `);
 
 console.log("Migration brand_settings OK");

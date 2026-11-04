@@ -76,11 +76,17 @@ async function getPartnerEmailBlock() {
     const config = {};
     for (const row of rows) config[row.key] = row.value;
 
-    const secondaryName = String(config.partner_secondary_name || "").trim();
-    const secondaryUrl = String(config.partner_secondary_url || "").trim();
-    const jourxUrl = String(config.partner_jourx_url || "").trim();
-    const jourxEnabled =
-      config.partner_jourx_enabled === "true" && Boolean(jourxUrl);
+    const { DEFAULT_PARTNER_JOURX_URL, DEFAULT_PARTNER_SECONDARY_URL, DEFAULT_PARTNER_SECONDARY_NAME } =
+      await import("./partnerDefaults.js");
+    const secondaryName =
+      String(config.partner_secondary_name || "").trim() ||
+      DEFAULT_PARTNER_SECONDARY_NAME;
+    const secondaryUrl =
+      String(config.partner_secondary_url || "").trim() ||
+      DEFAULT_PARTNER_SECONDARY_URL;
+    const jourxUrl =
+      String(config.partner_jourx_url || "").trim() || DEFAULT_PARTNER_JOURX_URL;
+    const jourxEnabled = config.partner_jourx_enabled === "true" && Boolean(jourxUrl);
     const secondaryEnabled =
       (config.partner_secondary_enabled ?? config.partner_tinaluxe_enabled) ===
         "true" && Boolean(secondaryUrl);

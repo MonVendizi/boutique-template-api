@@ -1210,57 +1210,51 @@ export default async function adminRoutes(fastify) {
     };
   });
 
-  /** Programme partenaires */
+  /** Programme partenaires — interrupteur unique (−5 €, confirmation + 404) */
   fastify.put("/admin/partner", async (request, reply) => {
     if (!(await checkAdmin(request, reply))) return;
-    const {
-      jourx_enabled,
-      jourx_placement,
-      tinaluxe_enabled,
-      tinaluxe_placement,
-      secondary_enabled,
-      secondary_placement,
-      category_conflict,
-      discount_amount,
-      discounts,
-    } = request.body || {};
-
-    const { normalizePartnerPlacement } = await import("../lib/partnerDefaults.js");
-    const jourxPlacementNorm = normalizePartnerPlacement(jourx_placement);
-    const secondaryPlacementNorm = normalizePartnerPlacement(
-      secondary_placement || tinaluxe_placement,
+    const body = request.body || {};
+    const { partnerProgramState, PARTNER_PROGRAM_DISCOUNT } = await import(
+      "../lib/partnerDefaults.js"
     );
 
+    // program_enabled prioritaire ; sinon tout flag legacy true → ON
+    let enabled;
+    if (body.program_enabled !== undefined && body.program_enabled !== null) {
+      enabled =
+        body.program_enabled === true || body.program_enabled === "true";
+    } else {
+      enabled =
+        body.jourx_enabled === true ||
+        body.jourx_enabled === "true" ||
+        body.secondary_enabled === true ||
+        body.secondary_enabled === "true" ||
+        body.tinaluxe_enabled === true ||
+        body.tinaluxe_enabled === "true";
+    }
+
+    const canon = partnerProgramState(enabled);
     const updates = [
-      ["partner_jourx_enabled", String(jourx_enabled ?? false)],
-      ["partner_jourx_placement", jourxPlacementNorm],
+      ["partner_jourx_enabled", canon.partner_jourx_enabled],
+      ["partner_tinaluxe_enabled", canon.partner_tinaluxe_enabled],
+      ["partner_jourx_placement", canon.partner_jourx_placement],
+      ["partner_tinaluxe_placement", canon.partner_tinaluxe_placement],
       [
-        "partner_tinaluxe_enabled",
-        String((secondary_enabled ?? tinaluxe_enabled) ?? false),
+        "partner_category_conflict",
+        String(body.category_conflict ?? false),
       ],
-      ["partner_tinaluxe_placement", secondaryPlacementNorm],
-      ["partner_category_conflict", String(category_conflict ?? false)],
-      ["partner_discount_amount", String(discount_amount ?? 0)],
+      ["partner_discount_amount", canon.partner_discount_amount],
       [
         "partner_activated_at",
-        jourx_enabled || secondary_enabled || tinaluxe_enabled
-          ? new Date().toISOString()
-          : "",
+        enabled ? new Date().toISOString() : "",
       ],
+      ["jourx_all_discount", String(PARTNER_PROGRAM_DISCOUNT)],
+      ["tinaluxe_all_discount", String(PARTNER_PROGRAM_DISCOUNT)],
+      ["jourx_confirmation_discount", String(PARTNER_PROGRAM_DISCOUNT)],
+      ["tinaluxe_confirmation_discount", String(PARTNER_PROGRAM_DISCOUNT)],
+      ["jourx_not_found_discount", String(PARTNER_PROGRAM_DISCOUNT)],
+      ["tinaluxe_not_found_discount", String(PARTNER_PROGRAM_DISCOUNT)],
     ];
-
-    if (discounts && typeof discounts === "object") {
-      for (const [key, value] of Object.entries(discounts)) {
-        if (
-          !/^(jourx|tinaluxe|secondary)_(cart|confirmation|not_found|all)_discount$/.test(
-            key
-          )
-        ) {
-          continue;
-        }
-        updates.push([key, String(value ?? 0)]);
-      }
-    }
 
     for (const [key, value] of updates) {
       await pool.query(
@@ -1269,11 +1263,15 @@ export default async function adminRoutes(fastify) {
       VALUES ($1, $2, 'string', 'partner', $1)
       ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()
     `,
-        [key, value]
+        [key, value],
       );
     }
 
-    return { success: true };
+    return {
+      success: true,
+      program_enabled: enabled,
+      discount: enabled ? PARTNER_PROGRAM_DISCOUNT : 0,
+    };
   });
 
   /** Synchro grille des réductions (depuis dashboard Vendizi) */

@@ -5,7 +5,10 @@ import {
   DEFAULT_PARTNER_JOURX_URL,
   DEFAULT_PARTNER_SECONDARY_NAME,
   DEFAULT_PARTNER_SECONDARY_URL,
-  normalizePartnerPlacement,
+  PARTNER_PROGRAM_DISCOUNT,
+  PARTNER_PROGRAM_PLACEMENT,
+  isPartnerProgramEnabled,
+  partnerProgramState,
 } from "../lib/partnerDefaults.js";
 
 export default async function brandRoutes(fastify) {
@@ -26,37 +29,22 @@ export default async function brandRoutes(fastify) {
     const config = {};
     for (const row of rows) config[row.key] = row.value;
 
-    const defaults = {
-      jourx_confirmation_discount: "10",
-      jourx_not_found_discount: "5",
-      jourx_all_discount: "12",
-      tinaluxe_confirmation_discount: "15",
-      tinaluxe_not_found_discount: "5",
-      tinaluxe_all_discount: "18",
-      // legacy keys (ignorées côté affichage panier)
-      jourx_cart_discount: "10",
-      tinaluxe_cart_discount: "15",
-    };
-    for (const [key, value] of Object.entries(defaults)) {
-      if (config[key] === undefined || config[key] === null || config[key] === "") {
-        config[key] = value;
-      }
-    }
-    const pairs = [
-      ["partner_tinaluxe_enabled", "partner_secondary_enabled"],
-      ["partner_tinaluxe_placement", "partner_secondary_placement"],
-      ["tinaluxe_cart_discount", "secondary_cart_discount"],
-      ["tinaluxe_confirmation_discount", "secondary_confirmation_discount"],
-      ["tinaluxe_not_found_discount", "secondary_not_found_discount"],
-      ["tinaluxe_all_discount", "secondary_all_discount"],
-    ];
-    for (const [from, to] of pairs) {
-      if (config[to] === undefined || config[to] === null || config[to] === "") {
-        config[to] = config[from] || "";
+    const discount = String(PARTNER_PROGRAM_DISCOUNT);
+    for (const brand of ["jourx", "tinaluxe", "secondary"]) {
+      for (const place of ["cart", "confirmation", "not_found", "all"]) {
+        config[`${brand}_${place}_discount`] = discount;
       }
     }
 
-    // URLs auto si absentes (déploiement / boutiques existantes)
+    const programOn = isPartnerProgramEnabled(config);
+    const canon = partnerProgramState(programOn);
+    Object.assign(config, canon);
+    config.partner_program_enabled = String(programOn);
+    config.partner_program_discount = discount;
+    config.partner_program_placement = PARTNER_PROGRAM_PLACEMENT;
+    config.partner_secondary_enabled = config.partner_tinaluxe_enabled;
+    config.partner_secondary_placement = config.partner_tinaluxe_placement;
+
     const rawJourxUrl = String(config.partner_jourx_url || "").trim();
     const rawSecondaryUrl = String(config.partner_secondary_url || "").trim();
     const rawSecondaryName = String(config.partner_secondary_name || "").trim();
@@ -66,74 +54,38 @@ export default async function brandRoutes(fastify) {
     config.partner_secondary_name =
       rawSecondaryName || DEFAULT_PARTNER_SECONDARY_NAME;
 
-    // Placements : plus de panier — cart/legacy → confirmation
-    const rawJourxPlacement = config.partner_jourx_placement;
-    const rawTinaluxePlacement = config.partner_tinaluxe_placement;
-    config.partner_jourx_placement = normalizePartnerPlacement(rawJourxPlacement);
-    config.partner_tinaluxe_placement =
-      normalizePartnerPlacement(rawTinaluxePlacement);
-    config.partner_secondary_placement = normalizePartnerPlacement(
-      config.partner_secondary_placement || config.partner_tinaluxe_placement,
-    );
-
-    // Persistance lazy (1ère lecture après déploiement) — URLs vides + cart→confirmation
-    const heals = [];
+    const heals = [
+      ["partner_jourx_enabled", canon.partner_jourx_enabled, "boolean", "partner", "Pub JourX activée"],
+      ["partner_tinaluxe_enabled", canon.partner_tinaluxe_enabled, "boolean", "partner", "Pub partenaire activée"],
+      ["partner_jourx_placement", PARTNER_PROGRAM_PLACEMENT, "string", "partner", "Placement : confirmation + 404"],
+      ["partner_tinaluxe_placement", PARTNER_PROGRAM_PLACEMENT, "string", "partner", "Placement : confirmation + 404"],
+      ["partner_discount_amount", canon.partner_discount_amount, "number", "partner", "Réduction mensuelle programme partenaire (€)"],
+      ["jourx_all_discount", discount, "number", "partner", "JourX — Confirmation + 404"],
+      ["tinaluxe_all_discount", discount, "number", "partner", "TinaLuxe — Confirmation + 404"],
+    ];
     if (!rawJourxUrl) {
       heals.push(["partner_jourx_url", config.partner_jourx_url, "string", "partner", "URL destination pub JourX"]);
     }
     if (!rawSecondaryUrl) {
-      heals.push([
-        "partner_secondary_url",
-        config.partner_secondary_url,
-        "string",
-        "partner",
-        "URL destination pub partenaire secondaire",
-      ]);
+      heals.push(["partner_secondary_url", config.partner_secondary_url, "string", "partner", "URL destination pub partenaire secondaire"]);
     }
     if (!rawSecondaryName) {
-      heals.push([
-        "partner_secondary_name",
-        config.partner_secondary_name,
-        "string",
-        "partner",
-        "Nom affiché partenaire secondaire",
-      ]);
+      heals.push(["partner_secondary_name", config.partner_secondary_name, "string", "partner", "Nom affiché partenaire secondaire"]);
     }
-    if (
-      String(rawJourxPlacement || "") !== config.partner_jourx_placement
-    ) {
-      heals.push([
-        "partner_jourx_placement",
-        config.partner_jourx_placement,
-        "string",
-        "partner",
-        "Placement pub JourX : confirmation | not_found | all",
-      ]);
-    }
-    if (
-      String(rawTinaluxePlacement || "") !== config.partner_tinaluxe_placement
-    ) {
-      heals.push([
-        "partner_tinaluxe_placement",
-        config.partner_tinaluxe_placement,
-        "string",
-        "partner",
-        "Placement pub partenaire : confirmation | not_found | all",
-      ]);
-    }
-    if (heals.length) {
-      void Promise.all(
-        heals.map(([key, value, type, category, label]) =>
-          pool.query(
+
+    void Promise.all(
+      heals.map(([key, value, type, category, label]) =>
+        pool
+          .query(
             `INSERT INTO brand_settings (key, value, type, category, label)
              VALUES ($1, $2, $3, $4, $5)
              ON CONFLICT (key) DO UPDATE
              SET value = EXCLUDED.value, updated_at = NOW()`,
             [key, value, type, category, label],
-          ).catch(() => null),
-        ),
-      );
-    }
+          )
+          .catch(() => null),
+      ),
+    );
 
     return config;
   });

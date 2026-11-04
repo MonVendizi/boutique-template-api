@@ -153,14 +153,14 @@ const defaults = [
   ["ga4_measurement_id", "", "text", "tracking", "Google Analytics 4 ID"],
   ["google_business_url", "", "text", "tracking", "Lien Google My Business"],
 
-  // Programme partenaire (hors panier / paiement — confirmation + 404)
+  // Programme partenaire unique (−5 €, confirmation + 404, JourX + TinaLuxe)
   ["partner_jourx_enabled", "false", "boolean", "partner", "Pub JourX activée"],
   [
     "partner_jourx_placement",
-    "confirmation",
+    "all",
     "string",
     "partner",
-    "Placement pub JourX : confirmation | not_found | all",
+    "Placement : confirmation + 404",
   ],
   [
     "partner_tinaluxe_enabled",
@@ -171,24 +171,24 @@ const defaults = [
   ],
   [
     "partner_tinaluxe_placement",
-    "confirmation",
+    "all",
     "string",
     "partner",
-    "Placement pub partenaire : confirmation | not_found | all",
+    "Placement : confirmation + 404",
   ],
   [
     "partner_category_conflict",
     "false",
     "boolean",
     "partner",
-    "Conflit catégorie partenaire - masque l option",
+    "Conflit catégorie partenaire - info",
   ],
   [
     "partner_discount_amount",
     "0",
     "number",
     "partner",
-    "Réduction mensuelle accordée en euros",
+    "Réduction mensuelle programme partenaire (€)",
   ],
   [
     "partner_activated_at",
@@ -218,36 +218,29 @@ const defaults = [
     "partner",
     "Nom affiché partenaire secondaire",
   ],
-  // Grille des réductions (synchro dashboard Vendizi)
-  ["jourx_cart_discount", "10", "number", "partner", "JourX — Panier (legacy)"],
+  ["jourx_cart_discount", "5", "number", "partner", "JourX — legacy"],
   [
     "jourx_confirmation_discount",
-    "10",
+    "5",
     "number",
     "partner",
-    "JourX — Confirmation commande",
+    "JourX — Confirmation",
   ],
   ["jourx_not_found_discount", "5", "number", "partner", "JourX — Page 404"],
   [
     "jourx_all_discount",
-    "12",
+    "5",
     "number",
     "partner",
     "JourX — Confirmation + 404",
   ],
-  [
-    "tinaluxe_cart_discount",
-    "15",
-    "number",
-    "partner",
-    "TinaLuxe — Panier (legacy)",
-  ],
+  ["tinaluxe_cart_discount", "5", "number", "partner", "TinaLuxe — legacy"],
   [
     "tinaluxe_confirmation_discount",
-    "15",
+    "5",
     "number",
     "partner",
-    "TinaLuxe — Confirmation commande",
+    "TinaLuxe — Confirmation",
   ],
   [
     "tinaluxe_not_found_discount",
@@ -258,7 +251,7 @@ const defaults = [
   ],
   [
     "tinaluxe_all_discount",
-    "18",
+    "5",
     "number",
     "partner",
     "TinaLuxe — Confirmation + 404",
@@ -276,29 +269,56 @@ for (const [key, value, type, category, label] of defaults) {
   );
 }
 
-// Placements legacy (panier / footer / sidebar) → confirmation
+// Placements → always confirmation + 404
 await pool.query(`
   UPDATE brand_settings
-  SET value = 'confirmation',
-      label = 'Placement pub JourX : confirmation | not_found | all',
+  SET value = 'all',
+      label = 'Placement : confirmation + 404',
       updated_at = NOW()
-  WHERE key IN ('partner_jourx_placement', 'partner_tinaluxe_placement')
-    AND value IN ('cart', 'footer', 'sidebar', '');
-`);
-await pool.query(`
-  UPDATE brand_settings
-  SET label = 'Placement pub JourX : confirmation | not_found | all',
-      updated_at = NOW()
-  WHERE key = 'partner_jourx_placement';
-`);
-await pool.query(`
-  UPDATE brand_settings
-  SET label = 'Placement pub partenaire : confirmation | not_found | all',
-      updated_at = NOW()
-  WHERE key = 'partner_tinaluxe_placement';
+  WHERE key IN ('partner_jourx_placement', 'partner_tinaluxe_placement');
 `);
 
-// URLs partenaires : remplir si vides (toutes boutiques)
+// Grille → 5 € partout
+await pool.query(`
+  UPDATE brand_settings
+  SET value = '5', updated_at = NOW()
+  WHERE key LIKE '%_discount'
+    AND key ~ '^(jourx|tinaluxe|secondary)_';
+`);
+
+// Si un partenaire était ON → les deux ON + remise 5
+await pool.query(`
+  UPDATE brand_settings
+  SET value = 'true', updated_at = NOW()
+  WHERE key IN ('partner_jourx_enabled', 'partner_tinaluxe_enabled')
+    AND EXISTS (
+      SELECT 1 FROM brand_settings b2
+      WHERE b2.key IN ('partner_jourx_enabled', 'partner_tinaluxe_enabled')
+        AND b2.value = 'true'
+    );
+`);
+await pool.query(`
+  UPDATE brand_settings
+  SET value = '5', updated_at = NOW()
+  WHERE key = 'partner_discount_amount'
+    AND EXISTS (
+      SELECT 1 FROM brand_settings b2
+      WHERE b2.key IN ('partner_jourx_enabled', 'partner_tinaluxe_enabled')
+        AND b2.value = 'true'
+    );
+`);
+await pool.query(`
+  UPDATE brand_settings
+  SET value = '0', updated_at = NOW()
+  WHERE key = 'partner_discount_amount'
+    AND NOT EXISTS (
+      SELECT 1 FROM brand_settings b2
+      WHERE b2.key IN ('partner_jourx_enabled', 'partner_tinaluxe_enabled')
+        AND b2.value = 'true'
+    );
+`);
+
+// URLs partenaires : remplir si vides
 await pool.query(`
   INSERT INTO brand_settings (key, value, type, category, label)
   VALUES

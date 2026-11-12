@@ -12,6 +12,99 @@ function getModel() {
   return (process.env.SEO_AI_MODEL || process.env.ANTHROPIC_MODEL || "").trim();
 }
 
+/** Contexte GSC + Analytics pour analyse IA (sans appeler Anthropic). */
+export async function buildAiContext() {
+  const property = await ensureBoutiqueSeoProperty();
+  const brand = await brandContext();
+  const [overview, opportunities, queries, pages, analytics] =
+    await Promise.all([
+      getOverview("28d"),
+      getOpportunities(),
+      getRanked("query", "28d"),
+      getRanked("page", "28d"),
+      fetchGa4Snapshot(),
+    ]);
+
+  return {
+    propertyId: property.id,
+    brand,
+    period: overview.ranges.current,
+    kpi: overview.kpi,
+    queries: queries.items.slice(0, 200),
+    pages: pages.items.slice(0, 100),
+    opportunities: opportunities.opportunities,
+    analytics,
+  };
+}
+
+/** Enregistre un rapport déjà généré (ex. depuis Vercel). */
+export async function persistAiReport(input) {
+  const property = await ensureBoutiqueSeoProperty();
+  const payload = validatePayload(input.payload);
+  const model = String(input.model || "vercel-seo-ai").trim() || "vercel-seo-ai";
+  const periodStart =
+    String(input.period_start || "").trim() ||
+    new Date().toISOString().slice(0, 10);
+  const periodEnd =
+    String(input.period_end || "").trim() || periodStart;
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const reportRes = await client.query(
+      `INSERT INTO seo_ai_reports
+        (property_id, period_start, period_end, model, data_sufficiency, summary, payload)
+       VALUES ($1, $2::date, $3::date, $4, $5, $6, $7::jsonb)
+       RETURNING id, property_id, generated_at::text, period_start::text, period_end::text,
+                 model, data_sufficiency, summary, payload`,
+      [
+        property.id,
+        periodStart,
+        periodEnd,
+        model,
+        payload.data_sufficiency,
+        payload.summary,
+        JSON.stringify(payload),
+      ],
+    );
+    const report = reportRes.rows[0];
+    const ideas = [];
+    for (const idea of payload.article_ideas) {
+      const ideaRes = await client.query(
+        `INSERT INTO seo_article_ideas
+          (property_id, report_id, title, suggested_slug, target_query,
+           secondary_queries, search_intent, priority, rationale, outline, faq, source, status)
+         VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10::jsonb,$11::jsonb,$12,'proposee')
+         RETURNING id, title, suggested_slug, target_query, secondary_queries,
+                   search_intent, priority, rationale, outline, faq, source, status,
+                   published_url, created_at::text`,
+        [
+          property.id,
+          report.id,
+          idea.title,
+          idea.suggested_slug,
+          idea.target_query,
+          JSON.stringify(idea.secondary_queries),
+          idea.search_intent,
+          idea.priority,
+          idea.rationale,
+          JSON.stringify(idea.outline),
+          JSON.stringify(idea.faq),
+          idea.source,
+        ],
+      );
+      ideas.push(ideaRes.rows[0]);
+    }
+    await client.query("COMMIT");
+    return { report, ideas };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function brandContext() {
   const { rows } = await pool.query(
     `SELECT key, value FROM brand_settings
@@ -207,35 +300,20 @@ Schéma:
 }
 
 export async function generateAiReport() {
-  const property = await ensureBoutiqueSeoProperty();
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new Error(
+      "ANTHROPIC_API_KEY non configuré sur l'API — lancez l'analyse depuis le front boutique",
+    );
+  }
   const model = getModel();
-  const brand = await brandContext();
-  const [overview, opportunities, queries, pages, analytics] =
-    await Promise.all([
-      getOverview("28d"),
-      getOpportunities(),
-      getRanked("query", "28d"),
-      getRanked("page", "28d"),
-      fetchGa4Snapshot(),
-    ]);
-
-  const context = {
-    brand,
-    period: overview.ranges.current,
-    kpi: overview.kpi,
-    queries: queries.items.slice(0, 200),
-    pages: pages.items.slice(0, 100),
-    opportunities: opportunities.opportunities,
-    analytics,
-  };
-
+  const context = await buildAiContext();
   let payload = null;
   let lastError = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const text = await callClaude(
         model,
-        brand,
+        context.brand,
         attempt === 0
           ? context
           : {
@@ -251,62 +329,12 @@ export async function generateAiReport() {
     }
   }
   if (!payload) throw lastError || new Error("Échec analyse IA");
-
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    const reportRes = await client.query(
-      `INSERT INTO seo_ai_reports
-        (property_id, period_start, period_end, model, data_sufficiency, summary, payload)
-       VALUES ($1, $2::date, $3::date, $4, $5, $6, $7::jsonb)
-       RETURNING id, property_id, generated_at::text, period_start::text, period_end::text,
-                 model, data_sufficiency, summary, payload`,
-      [
-        property.id,
-        overview.ranges.current.start,
-        overview.ranges.current.end,
-        model,
-        payload.data_sufficiency,
-        payload.summary,
-        JSON.stringify(payload),
-      ],
-    );
-    const report = reportRes.rows[0];
-    const ideas = [];
-    for (const idea of payload.article_ideas) {
-      const ideaRes = await client.query(
-        `INSERT INTO seo_article_ideas
-          (property_id, report_id, title, suggested_slug, target_query,
-           secondary_queries, search_intent, priority, rationale, outline, faq, source, status)
-         VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10::jsonb,$11::jsonb,$12,'proposee')
-         RETURNING id, title, suggested_slug, target_query, secondary_queries,
-                   search_intent, priority, rationale, outline, faq, source, status,
-                   published_url, created_at::text`,
-        [
-          property.id,
-          report.id,
-          idea.title,
-          idea.suggested_slug,
-          idea.target_query,
-          JSON.stringify(idea.secondary_queries),
-          idea.search_intent,
-          idea.priority,
-          idea.rationale,
-          JSON.stringify(idea.outline),
-          JSON.stringify(idea.faq),
-          idea.source,
-        ],
-      );
-      ideas.push(ideaRes.rows[0]);
-    }
-    await client.query("COMMIT");
-    return { report, ideas };
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
-  }
+  return persistAiReport({
+    payload,
+    model,
+    period_start: context.period.start,
+    period_end: context.period.end,
+  });
 }
 
 export async function listAiReports(limit = 10) {

@@ -1,9 +1,11 @@
 import { checkAdmin } from "../lib/adminAuth.js";
 import { getOpportunities, getOverview, getRanked } from "../lib/seo/analytics.js";
 import {
+  buildAiContext,
   generateAiReport,
   listAiReports,
   listArticleIdeas,
+  persistAiReport,
 } from "../lib/seo/ai-report.js";
 import { ensureBoutiqueSeoProperty } from "../lib/seo/property.js";
 import { syncBoutiqueSeo } from "../lib/seo/sync.js";
@@ -25,6 +27,7 @@ export default async function seoRoutes(fastify) {
               process.env.GOOGLE_CREDENTIALS !== "file"),
         ),
         has_anthropic: Boolean(process.env.ANTHROPIC_API_KEY),
+        seo_ai_via_vercel: true,
         seo_ai_model: process.env.SEO_AI_MODEL || null,
       };
     } catch (error) {
@@ -102,6 +105,17 @@ export default async function seoRoutes(fastify) {
     }
   });
 
+  fastify.get("/admin/seo/ai-context", async (request, reply) => {
+    if (!(await checkAdmin(request, reply))) return;
+    try {
+      return await buildAiContext();
+    } catch (error) {
+      return reply
+        .code(500)
+        .send({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
   fastify.get("/admin/seo/ai-report", async (request, reply) => {
     if (!(await checkAdmin(request, reply))) return;
     try {
@@ -114,11 +128,23 @@ export default async function seoRoutes(fastify) {
     }
   });
 
+  /** Body { payload, model, period_start?, period_end? } = enregistrement depuis Vercel.
+   *  Sans payload = génération locale (seulement si ANTHROPIC_API_KEY est sur Railway). */
   fastify.post("/admin/seo/ai-report", async (request, reply) => {
     if (!(await checkAdmin(request, reply))) return;
     try {
-      const out = await generateAiReport();
-      return out;
+      const body = request.body || {};
+      if (body.payload) {
+        return await persistAiReport(body);
+      }
+      if (!process.env.ANTHROPIC_API_KEY) {
+        return reply.code(501).send({
+          error:
+            "Analyse IA via le site (Vercel). Relancez depuis l'admin boutique.",
+          code: "USE_VERCEL_SEO_AI",
+        });
+      }
+      return await generateAiReport();
     } catch (error) {
       return reply
         .code(500)

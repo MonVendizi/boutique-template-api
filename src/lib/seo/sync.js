@@ -36,14 +36,15 @@ async function tryAcquireLock(propertyId) {
 }
 
 async function releaseLock(propertyId, status, error) {
+  // $2 ne doit pas être réutilisé dans un CASE (erreur PG "inconsistent types")
   await pool.query(
     `UPDATE seo_properties
-     SET last_sync_status = $2,
-         last_sync_error = $3,
-         last_sync_at = CASE WHEN $2 = 'success' THEN NOW() ELSE last_sync_at END,
+     SET last_sync_status = $2::text,
+         last_sync_error = $3::text,
+         last_sync_at = CASE WHEN $4::boolean THEN NOW() ELSE last_sync_at END,
          updated_at = NOW()
      WHERE id = $1`,
-    [propertyId, status, error],
+    [propertyId, status, error, status === "success"],
   );
 }
 

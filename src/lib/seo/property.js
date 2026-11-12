@@ -1,5 +1,29 @@
+import { execSync } from "child_process";
+import path from "path";
+import { fileURLToPath } from "url";
 import pool from "../../db/pool.js";
 import { normalizeGscSiteUrl } from "./gsc.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const apiRoot = path.join(__dirname, "../../..");
+let tablesReady = false;
+
+async function ensureSeoTables() {
+  if (tablesReady) return;
+  try {
+    await pool.query(`SELECT 1 FROM seo_properties LIMIT 1`);
+    tablesReady = true;
+    return;
+  } catch {
+    // tables absentes → migration
+  }
+  execSync("node scripts/migrate-seo.js", {
+    stdio: "inherit",
+    cwd: apiRoot,
+    env: process.env,
+  });
+  tablesReady = true;
+}
 
 async function readBrandSite() {
   const { rows } = await pool.query(
@@ -21,6 +45,7 @@ async function readBrandSite() {
 
 /** Une seule propriété active pour la boutique (créée au besoin). */
 export async function ensureBoutiqueSeoProperty() {
+  await ensureSeoTables();
   const { raw, label } = await readBrandSite();
   if (!raw) {
     throw new Error(

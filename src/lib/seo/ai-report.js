@@ -1,5 +1,6 @@
 import { BetaAnalyticsDataClient } from "@google-analytics/data";
 import pool from "../../db/pool.js";
+import { withGa4Cache } from "../ga4-cache.js";
 import {
   getOpportunities,
   getOverview,
@@ -146,17 +147,18 @@ async function brandContext() {
 async function fetchGa4Snapshot() {
   const propertyRaw = (process.env.GA4_PROPERTY_ID || "").trim();
   if (!propertyRaw) return { available: false, error: "GA4_PROPERTY_ID manquant" };
+  const propertyId = propertyRaw.replace(/^properties\//, "");
   try {
-    const credentials = process.env.GOOGLE_APPLICATION_CREDENTIALS
-      ? undefined
-      : loadGoogleServiceAccountCredentials();
-    const client = credentials
-      ? new BetaAnalyticsDataClient({ credentials })
-      : new BetaAnalyticsDataClient();
-    const propertyId = propertyRaw.replace(/^properties\//, "");
-    const callOpts = { timeout: 12_000 };
-    const [[kpiResponse], [sourcesResponse]] = await Promise.all([
-      client.runReport(
+    return await withGa4Cache(`seo-snapshot:${propertyId}`, 10 * 60 * 1000, async () => {
+      const credentials = process.env.GOOGLE_APPLICATION_CREDENTIALS
+        ? undefined
+        : loadGoogleServiceAccountCredentials();
+      const client = credentials
+        ? new BetaAnalyticsDataClient({ credentials })
+        : new BetaAnalyticsDataClient();
+      const callOpts = { timeout: 12_000 };
+      // Séquentiel + cache : économise le quota concurrent
+      const [kpiResponse] = await client.runReport(
         {
           property: `properties/${propertyId}`,
           dateRanges: [{ startDate: "28daysAgo", endDate: "today" }],
@@ -168,8 +170,8 @@ async function fetchGa4Snapshot() {
           ],
         },
         callOpts,
-      ),
-      client.runReport(
+      );
+      const [sourcesResponse] = await client.runReport(
         {
           property: `properties/${propertyId}`,
           dateRanges: [{ startDate: "28daysAgo", endDate: "today" }],
@@ -179,24 +181,24 @@ async function fetchGa4Snapshot() {
           limit: 8,
         },
         callOpts,
-      ),
-    ]);
-    const kpi = kpiResponse.rows?.[0]?.metricValues || [];
-    return {
-      available: true,
-      kpi: {
-        users: parseInt(kpi[0]?.value || "0", 10) || 0,
-        sessions: parseInt(kpi[1]?.value || "0", 10) || 0,
-        bounce_rate: Number(parseFloat(kpi[2]?.value || "0").toFixed(1)),
-        page_views: parseInt(kpi[3]?.value || "0", 10) || 0,
-      },
-      sources:
-        sourcesResponse.rows?.map((row) => ({
-          channel: row.dimensionValues?.[0]?.value || "Unknown",
-          sessions: parseInt(row.metricValues?.[0]?.value || "0", 10),
-          users: parseInt(row.metricValues?.[1]?.value || "0", 10),
-        })) || [],
-    };
+      );
+      const kpi = kpiResponse.rows?.[0]?.metricValues || [];
+      return {
+        available: true,
+        kpi: {
+          users: parseInt(kpi[0]?.value || "0", 10) || 0,
+          sessions: parseInt(kpi[1]?.value || "0", 10) || 0,
+          bounce_rate: Number(parseFloat(kpi[2]?.value || "0").toFixed(1)),
+          page_views: parseInt(kpi[3]?.value || "0", 10) || 0,
+        },
+        sources:
+          sourcesResponse.rows?.map((row) => ({
+            channel: row.dimensionValues?.[0]?.value || "Unknown",
+            sessions: parseInt(row.metricValues?.[0]?.value || "0", 10),
+            users: parseInt(row.metricValues?.[1]?.value || "0", 10),
+          })) || [],
+      };
+    });
   } catch (error) {
     return {
       available: false,

@@ -14,6 +14,11 @@ import {
 import { getSettings, setSettings } from "../lib/settings.js";
 import { createReferralForCustomer } from "./referrals.js";
 import { BetaAnalyticsDataClient } from "@google-analytics/data";
+import {
+  ga4QuotaUserMessage,
+  isGa4QuotaError,
+  withGa4Cache,
+} from "../lib/ga4-cache.js";
 import { checkAdmin, resolveValidAdminPassword } from "../lib/adminAuth.js";
 import { notifyIndexNow } from "../lib/indexnow.js";
 import {
@@ -736,6 +741,8 @@ export default async function adminRoutes(fastify) {
 
   // Timeout gRPC GA4 — sans ça DEADLINE_EXCEEDED bloque ~60s et tue le Conseiller (504)
   const GA4_CALL_MS = 12_000;
+  const GA4_ANALYTICS_TTL_MS = 10 * 60 * 1000; // 10 min
+  const GA4_REALTIME_TTL_MS = 60 * 1000; // 1 min
 
   // ─── Analytics (GA4 Data API) ───
   fastify.get("/admin/analytics", async (request, reply) => {
@@ -761,110 +768,108 @@ export default async function adminRoutes(fastify) {
     }
 
     const started = Date.now();
+    const cacheKey = `analytics:${propertyId}:${period}`;
     try {
-      const client = getAnalyticsClient();
-      const dateRange = { startDate: `${days}daysAgo`, endDate: "today" };
-      const property = `properties/${propertyId}`;
-      const callOpts = { timeout: GA4_CALL_MS };
-
-      const [
-        [kpiResponse],
-        [pagesResponse],
-        [sourcesResponse],
-        [devicesResponse],
-      ] = await Promise.all([
-        client.runReport(
+      return await withGa4Cache(cacheKey, GA4_ANALYTICS_TTL_MS, async () => {
+        const client = getAnalyticsClient();
+        const dateRange = { startDate: `${days}daysAgo`, endDate: "today" };
+        const property = `properties/${propertyId}`;
+        // 1 seul appel batch = moins de concurrence / tokens qu'avec 4 runReport
+        const [batch] = await client.batchRunReports(
           {
             property,
-            dateRanges: [dateRange],
-            metrics: [
-              { name: "activeUsers" },
-              { name: "screenPageViews" },
-              { name: "bounceRate" },
-              { name: "averageSessionDuration" },
+            requests: [
+              {
+                dateRanges: [dateRange],
+                metrics: [
+                  { name: "activeUsers" },
+                  { name: "screenPageViews" },
+                  { name: "bounceRate" },
+                  { name: "averageSessionDuration" },
+                ],
+              },
+              {
+                dateRanges: [dateRange],
+                dimensions: [{ name: "pagePath" }],
+                metrics: [
+                  { name: "screenPageViews" },
+                  { name: "averageSessionDuration" },
+                ],
+                orderBys: [
+                  { metric: { metricName: "screenPageViews" }, desc: true },
+                ],
+                limit: 10,
+              },
+              {
+                dateRanges: [dateRange],
+                dimensions: [{ name: "sessionDefaultChannelGroup" }],
+                metrics: [{ name: "activeUsers" }],
+                orderBys: [
+                  { metric: { metricName: "activeUsers" }, desc: true },
+                ],
+                limit: 6,
+              },
+              {
+                dateRanges: [dateRange],
+                dimensions: [{ name: "deviceCategory" }],
+                metrics: [{ name: "activeUsers" }],
+              },
             ],
           },
-          callOpts,
-        ),
-        client.runReport(
-          {
-            property,
-            dateRanges: [dateRange],
-            dimensions: [{ name: "pagePath" }],
-            metrics: [
-              { name: "screenPageViews" },
-              { name: "averageSessionDuration" },
-            ],
-            orderBys: [
-              { metric: { metricName: "screenPageViews" }, desc: true },
-            ],
-            limit: 10,
-          },
-          callOpts,
-        ),
-        client.runReport(
-          {
-            property,
-            dateRanges: [dateRange],
-            dimensions: [{ name: "sessionDefaultChannelGroup" }],
-            metrics: [{ name: "activeUsers" }],
-            orderBys: [{ metric: { metricName: "activeUsers" }, desc: true }],
-            limit: 6,
-          },
-          callOpts,
-        ),
-        client.runReport(
-          {
-            property,
-            dateRanges: [dateRange],
-            dimensions: [{ name: "deviceCategory" }],
-            metrics: [{ name: "activeUsers" }],
-          },
-          callOpts,
-        ),
-      ]);
+          { timeout: GA4_CALL_MS },
+        );
 
-      const kpi = kpiResponse.rows?.[0]?.metricValues || [];
-      const bounceRaw = parseFloat(kpi[2]?.value || "0");
-      // GA4 bounceRate is 0–1
-      const bouncePct = bounceRaw <= 1 ? bounceRaw * 100 : bounceRaw;
+        const reports = batch.reports || [];
+        const kpiResponse = reports[0] || {};
+        const pagesResponse = reports[1] || {};
+        const sourcesResponse = reports[2] || {};
+        const devicesResponse = reports[3] || {};
+        const kpi = kpiResponse.rows?.[0]?.metricValues || [];
+        const bounceRaw = parseFloat(kpi[2]?.value || "0");
+        const bouncePct = bounceRaw <= 1 ? bounceRaw * 100 : bounceRaw;
 
-      console.log(
-        "[ga4] analytics.ok",
-        JSON.stringify({ period, ms: Date.now() - started }),
-      );
+        console.log(
+          "[ga4] analytics.ok",
+          JSON.stringify({ period, ms: Date.now() - started, cached: false }),
+        );
 
-      return {
-        status: "connected",
-        period,
-        visitors: parseInt(kpi[0]?.value || "0", 10),
-        pageviews: parseInt(kpi[1]?.value || "0", 10),
-        bounce_rate: Number(bouncePct.toFixed(1)),
-        avg_session: Math.round(parseFloat(kpi[3]?.value || "0")),
-        top_pages:
-          pagesResponse.rows?.map((r) => ({
-            path: r.dimensionValues?.[0]?.value || "/",
-            views: parseInt(r.metricValues?.[0]?.value || "0", 10),
-            avg_time: Math.round(
-              parseFloat(r.metricValues?.[1]?.value || "0")
-            ),
-          })) || [],
-        traffic_sources:
-          sourcesResponse.rows?.map((r) => ({
-            source: r.dimensionValues?.[0]?.value || "Unknown",
-            users: parseInt(r.metricValues?.[0]?.value || "0", 10),
-          })) || [],
-        devices:
-          devicesResponse.rows?.map((r) => ({
-            device: r.dimensionValues?.[0]?.value || "unknown",
-            users: parseInt(r.metricValues?.[0]?.value || "0", 10),
-          })) || [],
-      };
+        return {
+          status: "connected",
+          period,
+          visitors: parseInt(kpi[0]?.value || "0", 10),
+          pageviews: parseInt(kpi[1]?.value || "0", 10),
+          bounce_rate: Number(bouncePct.toFixed(1)),
+          avg_session: Math.round(parseFloat(kpi[3]?.value || "0")),
+          top_pages:
+            pagesResponse.rows?.map((r) => ({
+              path: r.dimensionValues?.[0]?.value || "/",
+              views: parseInt(r.metricValues?.[0]?.value || "0", 10),
+              avg_time: Math.round(
+                parseFloat(r.metricValues?.[1]?.value || "0"),
+              ),
+            })) || [],
+          traffic_sources:
+            sourcesResponse.rows?.map((r) => ({
+              source: r.dimensionValues?.[0]?.value || "Unknown",
+              users: parseInt(r.metricValues?.[0]?.value || "0", 10),
+            })) || [],
+          devices:
+            devicesResponse.rows?.map((r) => ({
+              device: r.dimensionValues?.[0]?.value || "unknown",
+              users: parseInt(r.metricValues?.[0]?.value || "0", 10),
+            })) || [],
+        };
+      });
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = ga4QuotaUserMessage(err);
       console.error(
         "[ga4] analytics.fail",
-        JSON.stringify({ period, ms: Date.now() - started, error: message }),
+        JSON.stringify({
+          period,
+          ms: Date.now() - started,
+          error: err instanceof Error ? err.message : String(err),
+          quota: isGa4QuotaError(err),
+        }),
       );
       return {
         status: "error",
@@ -891,39 +896,44 @@ export default async function adminRoutes(fastify) {
     }
 
     try {
-      const client = getAnalyticsClient();
-      const property = `properties/${propertyId}`;
-      const callOpts = { timeout: GA4_CALL_MS };
+      return await withGa4Cache(
+        `realtime:${propertyId}`,
+        GA4_REALTIME_TTL_MS,
+        async () => {
+          const client = getAnalyticsClient();
+          const property = `properties/${propertyId}`;
+          const callOpts = { timeout: GA4_CALL_MS };
 
-      const [[realtimeResponse], [todayResponse]] = await Promise.all([
-        client.runRealtimeReport(
-          {
-            property,
-            metrics: [{ name: "activeUsers" }],
-          },
-          callOpts,
-        ),
-        client.runReport(
-          {
-            property,
-            dateRanges: [{ startDate: "today", endDate: "today" }],
-            metrics: [{ name: "activeUsers" }, { name: "screenPageViews" }],
-          },
-          callOpts,
-        ),
-      ]);
+          // Séquentiel : évite 2 appels concurrents (quota concurrent = 10)
+          const [realtimeResponse] = await client.runRealtimeReport(
+            {
+              property,
+              metrics: [{ name: "activeUsers" }],
+            },
+            callOpts,
+          );
+          const [todayResponse] = await client.runReport(
+            {
+              property,
+              dateRanges: [{ startDate: "today", endDate: "today" }],
+              metrics: [{ name: "activeUsers" }, { name: "screenPageViews" }],
+            },
+            callOpts,
+          );
 
-      const activeNow = parseInt(
-        realtimeResponse.rows?.[0]?.metricValues?.[0]?.value || "0",
-        10
+          const activeNow = parseInt(
+            realtimeResponse.rows?.[0]?.metricValues?.[0]?.value || "0",
+            10,
+          );
+          const todayKpi = todayResponse.rows?.[0]?.metricValues || [];
+
+          return {
+            active_users: activeNow,
+            today_users: parseInt(todayKpi[0]?.value || "0", 10),
+            today_pageviews: parseInt(todayKpi[1]?.value || "0", 10),
+          };
+        },
       );
-      const todayKpi = todayResponse.rows?.[0]?.metricValues || [];
-
-      return {
-        active_users: activeNow,
-        today_users: parseInt(todayKpi[0]?.value || "0", 10),
-        today_pageviews: parseInt(todayKpi[1]?.value || "0", 10),
-      };
     } catch (err) {
       console.error("GA4 realtime error:", err.message);
       return { active_users: null, today_users: null, today_pageviews: null };

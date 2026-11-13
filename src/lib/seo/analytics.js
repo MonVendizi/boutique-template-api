@@ -89,8 +89,13 @@ export async function getOverview(periodRaw) {
 
   let ive = null;
   try {
-    const { getVisibilityIndexView } = await import("./visibility.js");
-    ive = await getVisibilityIndexView(property.id);
+    const { getVisibilityIndexView, computeAndStoreVisibilityIndex } =
+      await import("./visibility.js");
+    // Lecture cache uniquement — pas d'appel GA4 bloquant
+    ive = await getVisibilityIndexView(property.id, { refresh: false });
+    if (!ive?.current) {
+      void computeAndStoreVisibilityIndex(property.id).catch(() => {});
+    }
   } catch {
     ive = null;
   }

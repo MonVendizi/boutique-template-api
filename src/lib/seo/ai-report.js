@@ -12,28 +12,42 @@ function getModel() {
   return (process.env.SEO_AI_MODEL || process.env.ANTHROPIC_MODEL || "").trim();
 }
 
-/** Contexte GSC + Analytics pour analyse IA (sans appeler Anthropic). */
+/** Contexte GSC + Analytics pour analyse IA (sans Anthropic). Listes réduites pour éviter 504. */
 export async function buildAiContext() {
   const property = await ensureBoutiqueSeoProperty();
   const brand = await brandContext();
   const [overview, opportunities, queries, pages, analytics] =
     await Promise.all([
-      getOverview("28d"),
+      getOverview("28d"), // IVE en cache seul — plus d'appel GA4 ici
       getOpportunities(),
       getRanked("query", "28d"),
       getRanked("page", "28d"),
       fetchGa4Snapshot(),
     ]);
 
+  const opp = opportunities.opportunities || {};
   return {
     propertyId: property.id,
     brand,
     period: overview.ranges.current,
     kpi: overview.kpi,
-    queries: queries.items.slice(0, 200),
-    pages: pages.items.slice(0, 100),
-    opportunities: opportunities.opportunities,
+    queries: queries.items.slice(0, 40).map(slimRanked),
+    pages: pages.items.slice(0, 25).map(slimRanked),
+    opportunities: {
+      page2to3: (opp.page2to3 || []).slice(0, 12),
+      titleImprove: (opp.titleImprove || []).slice(0, 12),
+    },
     analytics,
+  };
+}
+
+function slimRanked(row) {
+  return {
+    key: row.key,
+    clicks: row.clicks,
+    impressions: row.impressions,
+    ctr: Number(Number(row.ctr).toFixed(4)),
+    position: Number(Number(row.position).toFixed(1)),
   };
 }
 
@@ -115,7 +129,7 @@ async function brandContext() {
     `SELECT title, slug FROM blog_posts
      WHERE status = 'published'
      ORDER BY published_at DESC NULLS LAST
-     LIMIT 30`,
+     LIMIT 15`,
   );
   return {
     brand_name: map.brand_name || "Boutique",
@@ -124,7 +138,6 @@ async function brandContext() {
     seo_description_default: map.seo_description_default || "",
     published_articles: posts.map((p) => ({
       title: p.title,
-      url: `${String(map.seo_site_url || "").replace(/\/$/, "")}/blog/${p.slug}`,
       slug: p.slug,
     })),
   };
@@ -141,24 +154,26 @@ async function fetchGa4Snapshot() {
       ? new BetaAnalyticsDataClient({ credentials })
       : new BetaAnalyticsDataClient();
     const propertyId = propertyRaw.replace(/^properties\//, "");
-    const [kpiResponse] = await client.runReport({
-      property: `properties/${propertyId}`,
-      dateRanges: [{ startDate: "28daysAgo", endDate: "today" }],
-      metrics: [
-        { name: "activeUsers" },
-        { name: "sessions" },
-        { name: "bounceRate" },
-        { name: "screenPageViews" },
-      ],
-    });
-    const [sourcesResponse] = await client.runReport({
-      property: `properties/${propertyId}`,
-      dateRanges: [{ startDate: "28daysAgo", endDate: "today" }],
-      dimensions: [{ name: "sessionDefaultChannelGroup" }],
-      metrics: [{ name: "sessions" }, { name: "activeUsers" }],
-      orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
-      limit: 8,
-    });
+    const [[kpiResponse], [sourcesResponse]] = await Promise.all([
+      client.runReport({
+        property: `properties/${propertyId}`,
+        dateRanges: [{ startDate: "28daysAgo", endDate: "today" }],
+        metrics: [
+          { name: "activeUsers" },
+          { name: "sessions" },
+          { name: "bounceRate" },
+          { name: "screenPageViews" },
+        ],
+      }),
+      client.runReport({
+        property: `properties/${propertyId}`,
+        dateRanges: [{ startDate: "28daysAgo", endDate: "today" }],
+        dimensions: [{ name: "sessionDefaultChannelGroup" }],
+        metrics: [{ name: "sessions" }, { name: "activeUsers" }],
+        orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
+        limit: 8,
+      }),
+    ]);
     const kpi = kpiResponse.rows?.[0]?.metricValues || [];
     return {
       available: true,

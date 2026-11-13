@@ -188,12 +188,7 @@ export async function computeAndStoreVisibilityIndex(propertyId) {
   return rows[0];
 }
 
-export async function getVisibilityIndexView(propertyId) {
-  try {
-    await computeAndStoreVisibilityIndex(propertyId);
-  } catch {
-    // lecture seule si sync vide
-  }
+async function readVisibilityRows(propertyId) {
   const { rows } = await pool.query(
     `SELECT
       week_start::text, period_start::text, period_end::text,
@@ -201,13 +196,30 @@ export async function getVisibilityIndexView(propertyId) {
       attraction::float8 AS attraction, traffic::float8 AS traffic,
       impressions, clicks, ctr::float8 AS ctr,
       top10_share::float8 AS top10_share,
-      organic_sessions, analytics_available
+      organic_sessions, analytics_available, created_at
      FROM seo_visibility_index
      WHERE property_id = $1
      ORDER BY week_start DESC
      LIMIT 16`,
     [propertyId],
   );
+  return rows;
+}
+
+/**
+ * Par défaut : lecture cache uniquement (rapide).
+ * refresh=true : recalcule via GSC+GA4 (après sync ou action manuelle).
+ */
+export async function getVisibilityIndexView(propertyId, opts = {}) {
+  let rows = await readVisibilityRows(propertyId);
+  if (opts.refresh) {
+    try {
+      await computeAndStoreVisibilityIndex(propertyId);
+      rows = await readVisibilityRows(propertyId);
+    } catch {
+      // lecture seule si GSC vide / GA4 KO
+    }
+  }
   const current = rows[0] || null;
   const previous = rows[1] || null;
   const delta =

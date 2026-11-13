@@ -45,18 +45,21 @@ async function fetchOrganicSessions(start, end) {
   const propertyId = propertyRaw.replace(/^properties\//, "");
   try {
     const client = getGa4Client();
-    const [response] = await client.runReport({
-      property: `properties/${propertyId}`,
-      dateRanges: [{ startDate: start, endDate: end }],
-      dimensions: [{ name: "sessionDefaultChannelGroup" }],
-      metrics: [{ name: "sessions" }],
-      dimensionFilter: {
-        filter: {
-          fieldName: "sessionDefaultChannelGroup",
-          stringFilter: { matchType: "EXACT", value: "Organic Search" },
+    const [response] = await client.runReport(
+      {
+        property: `properties/${propertyId}`,
+        dateRanges: [{ startDate: start, endDate: end }],
+        dimensions: [{ name: "sessionDefaultChannelGroup" }],
+        metrics: [{ name: "sessions" }],
+        dimensionFilter: {
+          filter: {
+            fieldName: "sessionDefaultChannelGroup",
+            stringFilter: { matchType: "EXACT", value: "Organic Search" },
+          },
         },
       },
-    });
+      { timeout: 12_000 },
+    );
     const sessions = parseInt(
       response.rows?.[0]?.metricValues?.[0]?.value || "0",
       10,

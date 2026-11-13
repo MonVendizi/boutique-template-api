@@ -154,25 +154,32 @@ async function fetchGa4Snapshot() {
       ? new BetaAnalyticsDataClient({ credentials })
       : new BetaAnalyticsDataClient();
     const propertyId = propertyRaw.replace(/^properties\//, "");
+    const callOpts = { timeout: 12_000 };
     const [[kpiResponse], [sourcesResponse]] = await Promise.all([
-      client.runReport({
-        property: `properties/${propertyId}`,
-        dateRanges: [{ startDate: "28daysAgo", endDate: "today" }],
-        metrics: [
-          { name: "activeUsers" },
-          { name: "sessions" },
-          { name: "bounceRate" },
-          { name: "screenPageViews" },
-        ],
-      }),
-      client.runReport({
-        property: `properties/${propertyId}`,
-        dateRanges: [{ startDate: "28daysAgo", endDate: "today" }],
-        dimensions: [{ name: "sessionDefaultChannelGroup" }],
-        metrics: [{ name: "sessions" }, { name: "activeUsers" }],
-        orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
-        limit: 8,
-      }),
+      client.runReport(
+        {
+          property: `properties/${propertyId}`,
+          dateRanges: [{ startDate: "28daysAgo", endDate: "today" }],
+          metrics: [
+            { name: "activeUsers" },
+            { name: "sessions" },
+            { name: "bounceRate" },
+            { name: "screenPageViews" },
+          ],
+        },
+        callOpts,
+      ),
+      client.runReport(
+        {
+          property: `properties/${propertyId}`,
+          dateRanges: [{ startDate: "28daysAgo", endDate: "today" }],
+          dimensions: [{ name: "sessionDefaultChannelGroup" }],
+          metrics: [{ name: "sessions" }, { name: "activeUsers" }],
+          orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
+          limit: 8,
+        },
+        callOpts,
+      ),
     ]);
     const kpi = kpiResponse.rows?.[0]?.metricValues || [];
     return {

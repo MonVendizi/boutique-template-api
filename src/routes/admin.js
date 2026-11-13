@@ -734,6 +734,9 @@ export default async function adminRoutes(fastify) {
     };
   });
 
+  // Timeout gRPC GA4 — sans ça DEADLINE_EXCEEDED bloque ~60s et tue le Conseiller (504)
+  const GA4_CALL_MS = 12_000;
+
   // ─── Analytics (GA4 Data API) ───
   fastify.get("/admin/analytics", async (request, reply) => {
     if (!(await checkAdmin(request, reply))) return reply;
@@ -757,57 +760,79 @@ export default async function adminRoutes(fastify) {
       };
     }
 
+    const started = Date.now();
     try {
       const client = getAnalyticsClient();
       const dateRange = { startDate: `${days}daysAgo`, endDate: "today" };
       const property = `properties/${propertyId}`;
+      const callOpts = { timeout: GA4_CALL_MS };
 
-      const [kpiResponse] = await client.runReport({
-        property,
-        dateRanges: [dateRange],
-        metrics: [
-          { name: "activeUsers" },
-          { name: "screenPageViews" },
-          { name: "bounceRate" },
-          { name: "averageSessionDuration" },
-        ],
-      });
+      const [
+        [kpiResponse],
+        [pagesResponse],
+        [sourcesResponse],
+        [devicesResponse],
+      ] = await Promise.all([
+        client.runReport(
+          {
+            property,
+            dateRanges: [dateRange],
+            metrics: [
+              { name: "activeUsers" },
+              { name: "screenPageViews" },
+              { name: "bounceRate" },
+              { name: "averageSessionDuration" },
+            ],
+          },
+          callOpts,
+        ),
+        client.runReport(
+          {
+            property,
+            dateRanges: [dateRange],
+            dimensions: [{ name: "pagePath" }],
+            metrics: [
+              { name: "screenPageViews" },
+              { name: "averageSessionDuration" },
+            ],
+            orderBys: [
+              { metric: { metricName: "screenPageViews" }, desc: true },
+            ],
+            limit: 10,
+          },
+          callOpts,
+        ),
+        client.runReport(
+          {
+            property,
+            dateRanges: [dateRange],
+            dimensions: [{ name: "sessionDefaultChannelGroup" }],
+            metrics: [{ name: "activeUsers" }],
+            orderBys: [{ metric: { metricName: "activeUsers" }, desc: true }],
+            limit: 6,
+          },
+          callOpts,
+        ),
+        client.runReport(
+          {
+            property,
+            dateRanges: [dateRange],
+            dimensions: [{ name: "deviceCategory" }],
+            metrics: [{ name: "activeUsers" }],
+          },
+          callOpts,
+        ),
+      ]);
 
       const kpi = kpiResponse.rows?.[0]?.metricValues || [];
-
-      const [pagesResponse] = await client.runReport({
-        property,
-        dateRanges: [dateRange],
-        dimensions: [{ name: "pagePath" }],
-        metrics: [
-          { name: "screenPageViews" },
-          { name: "averageSessionDuration" },
-        ],
-        orderBys: [
-          { metric: { metricName: "screenPageViews" }, desc: true },
-        ],
-        limit: 10,
-      });
-
-      const [sourcesResponse] = await client.runReport({
-        property,
-        dateRanges: [dateRange],
-        dimensions: [{ name: "sessionDefaultChannelGroup" }],
-        metrics: [{ name: "activeUsers" }],
-        orderBys: [{ metric: { metricName: "activeUsers" }, desc: true }],
-        limit: 6,
-      });
-
-      const [devicesResponse] = await client.runReport({
-        property,
-        dateRanges: [dateRange],
-        dimensions: [{ name: "deviceCategory" }],
-        metrics: [{ name: "activeUsers" }],
-      });
-
       const bounceRaw = parseFloat(kpi[2]?.value || "0");
       // GA4 bounceRate is 0–1
       const bouncePct = bounceRaw <= 1 ? bounceRaw * 100 : bounceRaw;
+
+      console.log(
+        "[ga4] analytics.ok",
+        JSON.stringify({ period, ms: Date.now() - started }),
+      );
 
       return {
         status: "connected",
@@ -836,10 +861,14 @@ export default async function adminRoutes(fastify) {
           })) || [],
       };
     } catch (err) {
-      console.error("GA4 error:", err.message);
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(
+        "[ga4] analytics.fail",
+        JSON.stringify({ period, ms: Date.now() - started, error: message }),
+      );
       return {
         status: "error",
-        error: err.message,
+        error: message,
         period,
         visitors: null,
         pageviews: null,
@@ -864,17 +893,25 @@ export default async function adminRoutes(fastify) {
     try {
       const client = getAnalyticsClient();
       const property = `properties/${propertyId}`;
+      const callOpts = { timeout: GA4_CALL_MS };
 
-      const [realtimeResponse] = await client.runRealtimeReport({
-        property,
-        metrics: [{ name: "activeUsers" }],
-      });
-
-      const [todayResponse] = await client.runReport({
-        property,
-        dateRanges: [{ startDate: "today", endDate: "today" }],
-        metrics: [{ name: "activeUsers" }, { name: "screenPageViews" }],
-      });
+      const [[realtimeResponse], [todayResponse]] = await Promise.all([
+        client.runRealtimeReport(
+          {
+            property,
+            metrics: [{ name: "activeUsers" }],
+          },
+          callOpts,
+        ),
+        client.runReport(
+          {
+            property,
+            dateRanges: [{ startDate: "today", endDate: "today" }],
+            metrics: [{ name: "activeUsers" }, { name: "screenPageViews" }],
+          },
+          callOpts,
+        ),
+      ]);
 
       const activeNow = parseInt(
         realtimeResponse.rows?.[0]?.metricValues?.[0]?.value || "0",

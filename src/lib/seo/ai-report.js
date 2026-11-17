@@ -124,6 +124,26 @@ export function titlesOverlap(a, b) {
   return hits >= 2 && ratio >= 0.4;
 }
 
+function articleKeepScore(a) {
+  const h2 = Array.isArray(a.h2) ? a.h2.length : 0;
+  const faq = Array.isArray(a.faq_questions) ? a.faq_questions.length : 0;
+  const titleLen = String(a.title || "").length;
+  // Plus riche + titre plus précis (souvent plus long) gagne — pas « le plus récent »
+  return h2 * 3 + faq * 2 + Math.min(titleLen, 100) / 25;
+}
+
+function pickArticleToKeep(a, b) {
+  const sa = articleKeepScore(a);
+  const sb = articleKeepScore(b);
+  if (sa !== sb) return sa >= sb ? a : b;
+  if (String(a.title || "").length !== String(b.title || "").length) {
+    return String(a.title || "").length >= String(b.title || "").length ? a : b;
+  }
+  const da = Number(a.days_live) || 0;
+  const db = Number(b.days_live) || 0;
+  return da >= db ? a : b;
+}
+
 /** Paires d'articles publiés trop proches (à fusionner / distinguer). */
 export function findSimilarPublishedPairs(articles) {
   const list = Array.isArray(articles) ? articles : [];
@@ -138,10 +158,18 @@ export function findSimilarPublishedPairs(articles) {
         titlesOverlap(a.title, b.slug) ||
         titlesOverlap(a.slug, b.title)
       ) {
+        const keep = pickArticleToKeep(a, b);
+        const merge = keep.slug === a.slug ? b : a;
         pairs.push({
           a: { title: a.title, slug: a.slug, url: a.url },
           b: { title: b.title, slug: b.slug, url: b.url },
+          keep_slug: keep.slug,
+          keep_title: keep.title,
+          merge_slug: merge.slug,
+          merge_title: merge.title,
           reason: "titres_ou_sujets_tres_proches",
+          keep_rule:
+            "Garder l'article le plus complet / précis (contenu + titre), y fusionner l'autre. Ne pas choisir seulement parce qu'il est plus récent.",
         });
       }
     }
@@ -715,32 +743,20 @@ async function callClaude(model, brand, context) {
     );
   }
 
-  const system = `Tu es un conseiller boutique pour « ${brand.brand_name} » (${brand.site_url}), pas un rapport technique.
-Réponds UNIQUEMENT en JSON strict (pas de markdown), en français simple.
-Public : artisan / créateur. Phrases courtes. Une idée = une phrase d'action.
+  const system = `Tu es un conseiller boutique pour « ${brand.brand_name} » (${brand.site_url}).
+JSON strict, français simple, zéro jargon. 1 conseil = 1 action + chemin admin exact.
 
-LANGUE (obligatoire) — INTERDIT dans summary, action, evidence, current_issue, rationale :
-GSC, CTR, SEO, GA4, Analytics, organic, ranking, intent, cannibalisation, too_young, weak_ctr,
-expand_content, Open Graph, balises, indexation, meta (dire « texte sous le lien Google »),
-impressions (dire « fois où Google a montré votre boutique »), position (dire « place dans Google »).
-Autorisé : Google, clics, visiteurs, page d'accueil, article, FAQ, titre, livraison.
+LANGUE — INTERDIT : GSC, CTR, SEO, GA4, organic, ranking, cannibalisation, too_young, meta (→ texte sous le lien Google), impressions (→ fois où Google a montré…), position (→ place dans Google).
+Ne pas inventer de chiffres. Pas de sujet déjà publié / ouvert.
 
-S'appuyer uniquement sur les données fournies. Ne jamais inventer de chiffres.
-Utiliser GSC/Analytics en interne seulement — reformuler pour le client.
-Ne pas proposer de sujets déjà couverts (published_articles / open_ideas).
-INTERDIT de « recréer » un article déjà publié (titre proche / même sujet).
-DOUBLONS — context.similar_article_pairs : si non vide, FAIT automatique même si articles récents.
-Mentionner dans summary + quick_wins (fusionner / garder le meilleur / dépublier le doublon). Pas de 3ᵉ article sur ce thème.
+DOUBLONS — similar_article_pairs : si non vide, priorité 1. quick_wins blog_article : garder keep_title (keep_slug), fusionner merge_title, dépublier le doublon. Suivre keep_rule (pas « le plus récent »).
 
-summary : 4–6 phrases max. Où en est la boutique, ce qui marche, 2–3 priorités (dont doublons), et si article_ideas=[] expliquer pourquoi.
+summary 4–6 phrases ; rassurer si accueil bas sur boutique jeune ; si article_ideas=[] expliquer l'attente 2–4 semaines.
 
-ARTICLES PUBLIÉS — prioriser corrections ; too_young = ne pas juger la perf, mais signaler les doublons.
-FILE : max slots_available idées ; souvent [] si articles trop jeunes. Calendrier vide = normal si on attend Google.
-
-Chaque action faisable dans l'admin (admin_path obligatoire).
-AUTORISÉ : Personnalisation SEO, fiches produits, Blog, Avis, Footer (URL profil), Paramètres (lien avis Google).
-INTERDIT : posts réseaux, Ads, GTM/GA4 config, Search Console technique, sitemap, DNS, code.
-traffic_actions.channel : mots simples (« Google », « Blog »), jamais « Organic Search ».
+CHEMINS : FAQ = Admin → Personnalisation → Légal → FAQ ; accueil texte Google = Admin → Personnalisation → SEO + title_rewrites home_meta obligatoire ; blog = Admin → Blog. Jamais Admin → Pages.
+AUTORISÉ : Personnalisation, produits, Blog, Avis, Footer URL, Paramètres avis Google.
+INTERDIT : réseaux, Ads, GTM/GA4, Search Console, sitemap, DNS, code.
+channel : Google ou Blog. Max 3 quick_wins, 2 title_rewrites, 2 traffic_actions.
 Schéma:
 {
   "data_sufficiency":"ok|low",

@@ -8,6 +8,7 @@ import {
   persistAiReport,
   updateArticleIdea,
 } from "../lib/seo/ai-report.js";
+import { scheduleUnplannedArticleIdeas } from "../lib/seo/scheduleArticleIdeas.js";
 import { ensureBoutiqueSeoProperty } from "../lib/seo/property.js";
 import { syncBoutiqueSeo } from "../lib/seo/sync.js";
 
@@ -180,6 +181,30 @@ export default async function seoRoutes(fastify) {
     } catch (error) {
       return reply
         .code(400)
+        .send({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  /** Place au calendrier les idées pas encore planifiées (plafond file = 2). */
+  fastify.post("/admin/seo/article-ideas/schedule", async (request, reply) => {
+    if (!(await checkAdmin(request, reply))) return;
+    try {
+      const { getEditorialPipeline, pruneExcessOpenIdeas } = await import(
+        "../lib/seo/editorialPipeline.js"
+      );
+      const pruned = await pruneExcessOpenIdeas();
+      const calendar = await scheduleUnplannedArticleIdeas();
+      return {
+        ok: true,
+        scheduled: calendar.scheduled || [],
+        count: (calendar.scheduled || []).length,
+        pruned,
+        pipeline: await getEditorialPipeline(),
+        ideas: await listArticleIdeas(),
+      };
+    } catch (error) {
+      return reply
+        .code(500)
         .send({ error: error instanceof Error ? error.message : String(error) });
     }
   });

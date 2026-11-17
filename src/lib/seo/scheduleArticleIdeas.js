@@ -52,12 +52,13 @@ const MAX_TASKS_PER_DAY = 2;
 
 /**
  * Place intelligemment des idées d'articles dans le calendrier.
- * - max 4 nouvelles tâches par rapport
- * - max 1 tâche content / semaine
+ * - max 4 nouvelles tâches par passage (sauf backfill élargi)
+ * - max 1 tâche SEO-idée / semaine
  * - préfère mardi/mercredi
  * - évite jours déjà chargés / fêtes
  */
-export async function scheduleArticleIdeas(ideas) {
+export async function scheduleArticleIdeas(ideas, options = {}) {
+  const maxNew = Number(options.maxNew) > 0 ? Number(options.maxNew) : MAX_NEW_PER_REPORT;
   if (!Array.isArray(ideas) || ideas.length === 0) {
     return { scheduled: [] };
   }
@@ -76,10 +77,12 @@ export async function scheduleArticleIdeas(ideas) {
     const ideaId = parseSeoIdeaId(t.description);
     if (ideaId) already.add(ideaId);
 
-    const day = t.date;
+    const day = String(t.date).slice(0, 10);
     tasksByDay.set(day, (tasksByDay.get(day) || 0) + 1);
 
-    if (t.type === "content" || ideaId) {
+    // Quota SEO : uniquement les tâches déjà liées à une idée IA
+    // (ne pas bloquer à cause des tâches "content" du seed calendrier)
+    if (ideaId) {
       const wk = weekKey(new Date(`${day}T12:00:00`));
       contentByWeek.set(wk, (contentByWeek.get(wk) || 0) + 1);
     }
@@ -94,8 +97,9 @@ export async function scheduleArticleIdeas(ideas) {
   const horizon = addDays(new Date(), 120);
 
   for (const idea of sorted) {
-    if (scheduled.length >= MAX_NEW_PER_REPORT) break;
+    if (scheduled.length >= maxNew) break;
     if (already.has(idea.id)) continue;
+    if (["rejetee", "publiee"].includes(String(idea.status || ""))) continue;
 
     let placed = null;
     let probe = new Date(cursor);
@@ -166,6 +170,28 @@ export async function scheduleArticleIdeas(ideas) {
   }
 
   return { scheduled };
+}
+
+/** Planifie les idées existantes pas encore au calendrier (backfill, plafond file). */
+export async function scheduleUnplannedArticleIdeas() {
+  const { pruneExcessOpenIdeas, MAX_OPEN_ARTICLE_IDEAS } = await import(
+    "./editorialPipeline.js"
+  );
+  await pruneExcessOpenIdeas().catch(() => null);
+
+  const { rows } = await pool.query(
+    `SELECT id, title, suggested_slug, target_query, secondary_queries,
+            search_intent, priority, rationale, outline, faq, source, status
+     FROM seo_article_ideas
+     WHERE status IN ('proposee', 'retenue', 'redigee')
+     ORDER BY
+       CASE status WHEN 'redigee' THEN 0 WHEN 'retenue' THEN 1 ELSE 2 END,
+       priority ASC,
+       created_at ASC
+     LIMIT $1`,
+    [MAX_OPEN_ARTICLE_IDEAS],
+  );
+  return scheduleArticleIdeas(rows, { maxNew: MAX_OPEN_ARTICLE_IDEAS });
 }
 
 export async function findCalendarTaskForIdea(ideaId) {

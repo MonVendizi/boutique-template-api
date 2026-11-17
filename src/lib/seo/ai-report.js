@@ -27,6 +27,12 @@ export async function buildAiContext() {
     ]);
 
   const opp = opportunities.opportunities || {};
+  const { getEditorialPipeline, pruneExcessOpenIdeas } = await import(
+    "./editorialPipeline.js"
+  );
+  await pruneExcessOpenIdeas().catch(() => null);
+  const editorial_pipeline = await getEditorialPipeline();
+
   return {
     propertyId: property.id,
     brand,
@@ -39,6 +45,7 @@ export async function buildAiContext() {
       titleImprove: (opp.titleImprove || []).slice(0, 12),
     },
     analytics,
+    editorial_pipeline,
   };
 }
 
@@ -63,6 +70,16 @@ export async function persistAiReport(input) {
   const periodEnd =
     String(input.period_end || "").trim() || periodStart;
 
+  const { getEditorialPipeline, pruneExcessOpenIdeas } = await import(
+    "./editorialPipeline.js"
+  );
+  await pruneExcessOpenIdeas().catch(() => null);
+  const pipeline = await getEditorialPipeline();
+  const ideasToInsert = payload.article_ideas.slice(
+    0,
+    Math.min(pipeline.slots_available, pipeline.max_new_per_report),
+  );
+
   let report = null;
   let ideas = [];
   const client = await pool.connect();
@@ -85,7 +102,7 @@ export async function persistAiReport(input) {
       ],
     );
     report = reportRes.rows[0];
-    for (const idea of payload.article_ideas) {
+    for (const idea of ideasToInsert) {
       const ideaRes = await client.query(
         `INSERT INTO seo_article_ideas
           (property_id, report_id, title, suggested_slug, target_query,
@@ -121,8 +138,25 @@ export async function persistAiReport(input) {
 
   let calendar = { scheduled: [] };
   try {
-    const { scheduleArticleIdeas } = await import("./scheduleArticleIdeas.js");
-    calendar = await scheduleArticleIdeas(ideas);
+    const { scheduleArticleIdeas, scheduleUnplannedArticleIdeas } =
+      await import("./scheduleArticleIdeas.js");
+    const fromReport = await scheduleArticleIdeas(ideas, {
+      maxNew: pipeline.max_open,
+    });
+    const backfill = await scheduleUnplannedArticleIdeas();
+    const seen = new Set(
+      (fromReport.scheduled || []).map((s) => s.idea_id),
+    );
+    calendar = {
+      scheduled: [
+        ...(fromReport.scheduled || []),
+        ...(backfill.scheduled || []).filter((s) => !seen.has(s.idea_id)),
+      ],
+      pipeline: await getEditorialPipeline(),
+      ideas_inserted: ideas.length,
+      ideas_skipped_for_queue:
+        payload.article_ideas.length - ideasToInsert.length,
+    };
     const refreshed = await listArticleIdeasByIds(ideas.map((i) => i.id));
     return { report, ideas: refreshed.length ? refreshed : ideas, calendar };
   } catch (schedErr) {
@@ -310,7 +344,7 @@ function validatePayload(input) {
   const article_ideas = Array.isArray(input.article_ideas)
     ? input.article_ideas.filter((x) => x && String(x.title || "").trim())
     : [];
-  if (!article_ideas.length) throw new Error("Aucune idée d'article");
+  // 0 idée autorisé si la file éditoriale est pleine (slots_available = 0)
   return {
     data_sufficiency: sufficiency,
     summary,
@@ -321,7 +355,7 @@ function validatePayload(input) {
     traffic_actions: Array.isArray(input.traffic_actions)
       ? input.traffic_actions
       : [],
-    article_ideas: article_ideas.slice(0, 8).map((idea) => ({
+    article_ideas: article_ideas.slice(0, 2).map((idea) => ({
       title: String(idea.title),
       suggested_slug: String(idea.suggested_slug || ""),
       target_query: String(idea.target_query || ""),
@@ -362,8 +396,13 @@ Réponds UNIQUEMENT en JSON strict (pas de markdown), en français.
 S'appuyer uniquement sur les données fournies. Ne jamais inventer de chiffres.
 Croiser GSC et Analytics quand analytics.available = true.
 Distinguer impressions GSC ≠ sessions Analytics.
-Ne pas proposer de sujets déjà couverts.
-5 à 8 idées d'articles max.
+Ne pas proposer de sujets déjà couverts (published_articles / open_ideas).
+FILE ÉDITORIALE (obligatoire) — voir context.editorial_pipeline :
+- Max 2 idées d'articles ouvertes à la fois.
+- Proposer au plus editorial_pipeline.slots_available idées (0, 1 ou 2).
+- Si slots_available = 0 : article_ideas DOIT être [].
+- Préférer 1 sujet data (requête avec signaux) plutôt que plusieurs sujets inventés.
+- Boucle : écrire → publier → mesurer avant d'en proposer d'autres.
 Chaque action doit être faisable dans l'admin boutique (admin_path obligatoire).
 AUTORISÉ : Personnalisation SEO, fiches produits (SEO/FAQ page de vente), Blog, Avis, Footer (URL profil seulement), Paramètres (lien avis Google).
 INTERDIT : posts réseaux, Ads, GTM/GA4 config, Search Console technique, sitemap, DNS, code.
@@ -374,7 +413,7 @@ Schéma:
   "quick_wins":[{"page":"","query":"","action":"","evidence":"","admin_path":"Admin → …"}],
   "title_rewrites":[{"page":"","current_issue":"","suggested_title":"","suggested_meta_description":"","admin_path":"Admin → …"}],
   "traffic_actions":[{"channel":"","action":"","evidence":"","priority":1,"admin_path":"Admin → …"}],
-  "article_ideas":[{"title":"","suggested_slug":"","target_query":"","secondary_queries":[],"search_intent":"informationnelle|comparative|transactionnelle","priority":1,"rationale":"","outline":[],"faq":[],"source":"data|positioning"}]
+  "article_ideas":[]
 }`;
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -462,6 +501,12 @@ export async function listAiReports(limit = 10) {
 
 export async function listArticleIdeas() {
   const property = await ensureBoutiqueSeoProperty();
+  try {
+    const { pruneExcessOpenIdeas } = await import("./editorialPipeline.js");
+    await pruneExcessOpenIdeas();
+  } catch {
+    // ignore
+  }
   const { rows } = await pool.query(
     `SELECT id, title, suggested_slug, target_query, secondary_queries,
             search_intent, priority, rationale, outline, faq, source, status,

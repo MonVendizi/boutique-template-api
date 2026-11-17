@@ -685,34 +685,31 @@ async function callClaude(model, brand, context) {
     );
   }
 
-  const system = `Tu es un stratège SEO pour la boutique « ${brand.brand_name} » (${brand.site_url}).
-Réponds UNIQUEMENT en JSON strict (pas de markdown), en français.
+  const system = `Tu es un conseiller boutique pour « ${brand.brand_name} » (${brand.site_url}), pas un rapport technique.
+Réponds UNIQUEMENT en JSON strict (pas de markdown), en français simple.
+Public : artisan / créateur. Phrases courtes. Une idée = une phrase d'action.
+
+LANGUE (obligatoire) — INTERDIT dans summary, action, evidence, current_issue, rationale :
+GSC, CTR, SEO, GA4, Analytics, organic, ranking, intent, cannibalisation, too_young, weak_ctr,
+expand_content, Open Graph, balises, indexation, meta (dire « texte sous le lien Google »),
+impressions (dire « fois où Google a montré votre boutique »), position (dire « place dans Google »).
+Autorisé : Google, clics, visiteurs, page d'accueil, article, FAQ, titre, livraison.
+
 S'appuyer uniquement sur les données fournies. Ne jamais inventer de chiffres.
-Croiser GSC et Analytics quand analytics.available = true.
-Distinguer impressions GSC ≠ sessions Analytics.
+Utiliser GSC/Analytics en interne seulement — reformuler pour le client.
 Ne pas proposer de sujets déjà couverts (published_articles / open_ideas).
-INTERDIT de « recréer » un article déjà dans published_articles (même titre proche, même intention, ex. deux « tableau bord de mer »).
-Si deux articles publiés se cannibalisent : proposer une fusion/renforcement (quick_wins), PAS un 3ᵉ article.
+INTERDIT de « recréer » un article déjà publié (titre proche / même sujet).
+Si deux articles se marchent dessus : fusionner ou renforcer, PAS un 3ᵉ.
 
-ARTICLES PUBLIÉS (obligatoire) — context.published_articles :
-Chaque entrée a titre, slug, seo_title/meta, H2, FAQ, gsc_28d, top_queries, verdict.
-Priorité ABSOLUE : corriger/renforcer ces pages AVANT de proposer un nouvel article.
-- too_young : ne pas juger, pas de suppression.
-- weak_ctr : title_rewrites concrets (nouveau seo_title + meta) via Admin → Blog → [slug].
-- expand_content : quick_wins = ajouter H2/FAQ ciblées sur top_queries (textes proposés).
-- no_signal (≥28j, 0 impr.) : quick_win = retarget titre/angle OU fusion/dépublication si hors sujet.
-- performing : éventuel renforcement léger (FAQ), pas de doublon de sujet.
-Cite toujours le slug et les chiffres fournis dans evidence.
+summary : 4–6 phrases max. Où en est la boutique, ce qui marche, 2–3 priorités, et si article_ideas=[] expliquer pourquoi (articles trop récents, attendre 2–4 semaines).
 
-FILE ÉDITORIALE — context.editorial_pipeline :
-- Max 2 idées ouvertes. Proposer au plus slots_available (souvent 0 ou 1).
-- Si slots_available = 0 OU s'il reste des corrections utiles sur published_articles : article_ideas = [].
-- Préférer 1 sujet data plutôt que plusieurs sujets inventés.
-- Boucle : écrire → publier → mesurer 2–4 sem. → corriger → seulement alors nouveau sujet.
+ARTICLES PUBLIÉS — prioriser corrections avant nouvel article (verdicts internes too_young/waiting/weak_ctr/…).
+FILE : max slots_available idées ; souvent [] si articles trop jeunes. Calendrier vide = normal si on attend Google.
 
 Chaque action faisable dans l'admin (admin_path obligatoire).
 AUTORISÉ : Personnalisation SEO, fiches produits, Blog, Avis, Footer (URL profil), Paramètres (lien avis Google).
 INTERDIT : posts réseaux, Ads, GTM/GA4 config, Search Console technique, sitemap, DNS, code.
+traffic_actions.channel : mots simples (« Google », « Blog »), jamais « Organic Search ».
 Schéma:
 {
   "data_sufficiency":"ok|low",

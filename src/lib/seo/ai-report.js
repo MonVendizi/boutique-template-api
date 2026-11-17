@@ -63,6 +63,8 @@ export async function persistAiReport(input) {
   const periodEnd =
     String(input.period_end || "").trim() || periodStart;
 
+  let report = null;
+  let ideas = [];
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -82,8 +84,7 @@ export async function persistAiReport(input) {
         JSON.stringify(payload),
       ],
     );
-    const report = reportRes.rows[0];
-    const ideas = [];
+    report = reportRes.rows[0];
     for (const idea of payload.article_ideas) {
       const ideaRes = await client.query(
         `INSERT INTO seo_article_ideas
@@ -111,13 +112,94 @@ export async function persistAiReport(input) {
       ideas.push(ideaRes.rows[0]);
     }
     await client.query("COMMIT");
-    return { report, ideas };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
   } finally {
     client.release();
   }
+
+  let calendar = { scheduled: [] };
+  try {
+    const { scheduleArticleIdeas } = await import("./scheduleArticleIdeas.js");
+    calendar = await scheduleArticleIdeas(ideas);
+    const refreshed = await listArticleIdeasByIds(ideas.map((i) => i.id));
+    return { report, ideas: refreshed.length ? refreshed : ideas, calendar };
+  } catch (schedErr) {
+    console.error("scheduleArticleIdeas:", schedErr);
+    return { report, ideas, calendar };
+  }
+}
+
+const IDEA_STATUSES = [
+  "proposee",
+  "retenue",
+  "redigee",
+  "publiee",
+  "rejetee",
+];
+
+async function listArticleIdeasByIds(ids) {
+  if (!ids.length) return [];
+  const { rows } = await pool.query(
+    `SELECT id, title, suggested_slug, target_query, secondary_queries,
+            search_intent, priority, rationale, outline, faq, source, status,
+            published_url, created_at::text, updated_at::text
+     FROM seo_article_ideas
+     WHERE id = ANY($1::uuid[])`,
+    [ids],
+  );
+  return rows;
+}
+
+export async function updateArticleIdea(ideaId, patch = {}) {
+  if (patch.status && !IDEA_STATUSES.includes(patch.status)) {
+    throw new Error("Statut invalide");
+  }
+
+  const { rows } = await pool.query(
+    `UPDATE seo_article_ideas
+     SET
+       status = COALESCE($2, status),
+       published_url = CASE WHEN $3::boolean THEN $4 ELSE published_url END,
+       updated_at = NOW()
+     WHERE id = $1
+     RETURNING id, title, suggested_slug, target_query, secondary_queries,
+               search_intent, priority, rationale, outline, faq, source, status,
+               published_url, created_at::text, updated_at::text`,
+    [
+      ideaId,
+      patch.status || null,
+      patch.published_url !== undefined,
+      patch.published_url ?? null,
+    ],
+  );
+  const idea = rows[0] || null;
+  if (!idea) return null;
+
+  const {
+    deleteCalendarTaskForIdea,
+    postponeCalendarTaskForIdea,
+    findCalendarTaskForIdea,
+  } = await import("./scheduleArticleIdeas.js");
+
+  if (idea.status === "rejetee" || idea.status === "publiee") {
+    await deleteCalendarTaskForIdea(idea.id).catch(() => null);
+  }
+
+  let calendar_task = await findCalendarTaskForIdea(idea.id);
+  if (patch.postpone_days != null && calendar_task) {
+    calendar_task = await postponeCalendarTaskForIdea(
+      idea.id,
+      Number(patch.postpone_days),
+    );
+  }
+
+  return {
+    ...idea,
+    calendar_task_id: calendar_task?.id ?? null,
+    calendar_date: calendar_task?.date ?? null,
+  };
 }
 
 async function brandContext() {
@@ -282,13 +364,16 @@ Croiser GSC et Analytics quand analytics.available = true.
 Distinguer impressions GSC ≠ sessions Analytics.
 Ne pas proposer de sujets déjà couverts.
 5 à 8 idées d'articles max.
+Chaque action doit être faisable dans l'admin boutique (admin_path obligatoire).
+AUTORISÉ : Personnalisation SEO, fiches produits (SEO/FAQ page de vente), Blog, Avis, Footer (URL profil seulement), Paramètres (lien avis Google).
+INTERDIT : posts réseaux, Ads, GTM/GA4 config, Search Console technique, sitemap, DNS, code.
 Schéma:
 {
   "data_sufficiency":"ok|low",
   "summary":"",
-  "quick_wins":[{"page":"","query":"","action":"","evidence":""}],
-  "title_rewrites":[{"page":"","current_issue":"","suggested_title":"","suggested_meta_description":""}],
-  "traffic_actions":[{"channel":"","action":"","evidence":"","priority":1}],
+  "quick_wins":[{"page":"","query":"","action":"","evidence":"","admin_path":"Admin → …"}],
+  "title_rewrites":[{"page":"","current_issue":"","suggested_title":"","suggested_meta_description":"","admin_path":"Admin → …"}],
+  "traffic_actions":[{"channel":"","action":"","evidence":"","priority":1,"admin_path":"Admin → …"}],
   "article_ideas":[{"title":"","suggested_slug":"","target_query":"","secondary_queries":[],"search_intent":"informationnelle|comparative|transactionnelle","priority":1,"rationale":"","outline":[],"faq":[],"source":"data|positioning"}]
 }`;
 
@@ -386,5 +471,23 @@ export async function listArticleIdeas() {
      ORDER BY priority ASC, created_at DESC`,
     [property.id],
   );
-  return rows;
+
+  const { rows: tasks } = await pool.query(
+    `SELECT id, date::text AS date, description
+     FROM calendar_tasks
+     WHERE description LIKE '%[seo-idea:%'`,
+  );
+  const byIdea = new Map();
+  for (const t of tasks) {
+    const m = String(t.description || "").match(
+      /\[seo-idea:([0-9a-f-]{36})\]/i,
+    );
+    if (m) byIdea.set(m[1], { calendar_task_id: t.id, calendar_date: t.date });
+  }
+
+  return rows.map((idea) => ({
+    ...idea,
+    calendar_task_id: byIdea.get(idea.id)?.calendar_task_id ?? null,
+    calendar_date: byIdea.get(idea.id)?.calendar_date ?? null,
+  }));
 }

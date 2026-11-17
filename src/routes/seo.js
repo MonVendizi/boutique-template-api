@@ -6,6 +6,7 @@ import {
   listAiReports,
   listArticleIdeas,
   persistAiReport,
+  updateArticleIdea,
 } from "../lib/seo/ai-report.js";
 import { ensureBoutiqueSeoProperty } from "../lib/seo/property.js";
 import { syncBoutiqueSeo } from "../lib/seo/sync.js";
@@ -159,6 +160,26 @@ export default async function seoRoutes(fastify) {
     } catch (error) {
       return reply
         .code(500)
+        .send({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  fastify.patch("/admin/seo/article-ideas/:id", async (request, reply) => {
+    if (!(await checkAdmin(request, reply))) return;
+    try {
+      const id = String(request.params.id || "").trim();
+      if (!id) return reply.code(400).send({ error: "ID requis" });
+      const body = request.body || {};
+      const idea = await updateArticleIdea(id, {
+        status: body.status,
+        published_url: body.published_url,
+        postpone_days: body.postpone_days,
+      });
+      if (!idea) return reply.code(404).send({ error: "Idée introuvable" });
+      return { idea };
+    } catch (error) {
+      return reply
+        .code(400)
         .send({ error: error instanceof Error ? error.message : String(error) });
     }
   });

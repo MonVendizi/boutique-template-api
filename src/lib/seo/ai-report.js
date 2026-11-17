@@ -40,6 +40,8 @@ export async function buildAiContext() {
   );
   await pruneExcessOpenIdeas().catch(() => null);
   const editorial_pipeline = await getEditorialPipeline();
+  const similar_article_pairs =
+    findSimilarPublishedPairs(published_articles);
 
   return {
     propertyId: property.id,
@@ -63,6 +65,7 @@ export async function buildAiContext() {
     analytics,
     editorial_pipeline,
     published_articles,
+    similar_article_pairs,
   };
 }
 
@@ -106,6 +109,7 @@ export function titlesOverlap(a, b) {
     "quel",
     "quelle",
     "quels",
+    "choisir",
     "guide",
     "complet",
     "article",
@@ -116,7 +120,33 @@ export function titlesOverlap(a, b) {
   const setA = new Set(wa);
   const hits = wb.filter((w) => setA.has(w)).length;
   const ratio = hits / Math.max(setA.size, wb.length);
-  return hits >= 2 && ratio >= 0.5;
+  // 2 mots forts en commun OU un titre quasi contenu dans l'autre
+  return hits >= 2 && ratio >= 0.4;
+}
+
+/** Paires d'articles publiés trop proches (à fusionner / distinguer). */
+export function findSimilarPublishedPairs(articles) {
+  const list = Array.isArray(articles) ? articles : [];
+  const pairs = [];
+  for (let i = 0; i < list.length; i++) {
+    for (let j = i + 1; j < list.length; j++) {
+      const a = list[i];
+      const b = list[j];
+      if (
+        titlesOverlap(a.title, b.title) ||
+        titlesOverlap(a.slug, b.slug) ||
+        titlesOverlap(a.title, b.slug) ||
+        titlesOverlap(a.slug, b.title)
+      ) {
+        pairs.push({
+          a: { title: a.title, slug: a.slug, url: a.url },
+          b: { title: b.title, slug: b.slug, url: b.url },
+          reason: "titres_ou_sujets_tres_proches",
+        });
+      }
+    }
+  }
+  return pairs.slice(0, 8);
 }
 
 /**
@@ -699,11 +729,12 @@ S'appuyer uniquement sur les données fournies. Ne jamais inventer de chiffres.
 Utiliser GSC/Analytics en interne seulement — reformuler pour le client.
 Ne pas proposer de sujets déjà couverts (published_articles / open_ideas).
 INTERDIT de « recréer » un article déjà publié (titre proche / même sujet).
-Si deux articles se marchent dessus : fusionner ou renforcer, PAS un 3ᵉ.
+DOUBLONS — context.similar_article_pairs : si non vide, FAIT automatique même si articles récents.
+Mentionner dans summary + quick_wins (fusionner / garder le meilleur / dépublier le doublon). Pas de 3ᵉ article sur ce thème.
 
-summary : 4–6 phrases max. Où en est la boutique, ce qui marche, 2–3 priorités, et si article_ideas=[] expliquer pourquoi (articles trop récents, attendre 2–4 semaines).
+summary : 4–6 phrases max. Où en est la boutique, ce qui marche, 2–3 priorités (dont doublons), et si article_ideas=[] expliquer pourquoi.
 
-ARTICLES PUBLIÉS — prioriser corrections avant nouvel article (verdicts internes too_young/waiting/weak_ctr/…).
+ARTICLES PUBLIÉS — prioriser corrections ; too_young = ne pas juger la perf, mais signaler les doublons.
 FILE : max slots_available idées ; souvent [] si articles trop jeunes. Calendrier vide = normal si on attend Google.
 
 Chaque action faisable dans l'admin (admin_path obligatoire).

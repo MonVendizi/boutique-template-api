@@ -40,8 +40,10 @@ export async function buildAiContext() {
   );
   await pruneExcessOpenIdeas().catch(() => null);
   const editorial_pipeline = await getEditorialPipeline();
-  const similar_article_pairs =
-    findSimilarPublishedPairs(published_articles);
+  const similar_article_pairs = findSimilarPublishedPairs(
+    published_articles,
+    brand.brand_name || "",
+  );
 
   return {
     propertyId: property.id,
@@ -90,38 +92,59 @@ export function normalizeSeoText(raw) {
     .trim();
 }
 
+const TITLE_STOP = new Set([
+  "pour",
+  "avec",
+  "dans",
+  "une",
+  "des",
+  "les",
+  "votre",
+  "notre",
+  "comment",
+  "quel",
+  "quelle",
+  "quels",
+  "choisir",
+  "guide",
+  "complet",
+  "article",
+  "compte",
+  "ouvre",
+  "ouvrir",
+  "ligne",
+  "boutique",
+]);
+
+function titleTokens(raw, extraStop = []) {
+  const stop = new Set([...TITLE_STOP, ...extraStop]);
+  return normalizeSeoText(raw)
+    .split(/[\s-]+/)
+    .filter((w) => w.length > 3 && !stop.has(w));
+}
+
 /** Vrai si deux titres/slugs couvrent le même sujet (anti-cannibalisation). */
-export function titlesOverlap(a, b) {
+export function titlesOverlap(a, b, brandName = "") {
   const na = normalizeSeoText(a);
   const nb = normalizeSeoText(b);
   if (!na || !nb) return false;
   if (na === nb) return true;
-  if (na.includes(nb) || nb.includes(na)) return true;
-  const stop = new Set([
-    "pour",
-    "avec",
-    "dans",
-    "une",
-    "des",
-    "les",
-    "votre",
-    "comment",
-    "quel",
-    "quelle",
-    "quels",
-    "choisir",
-    "guide",
-    "complet",
-    "article",
-  ]);
-  const wa = na.split(/[\s-]+/).filter((w) => w.length > 3 && !stop.has(w));
-  const wb = nb.split(/[\s-]+/).filter((w) => w.length > 3 && !stop.has(w));
+
+  // Mots de la marque exclus : sinon « Atelier des Couleurs… » matche tous les titres
+  const brandTokens = titleTokens(brandName).filter((w) => w.length > 3);
+  const wa = titleTokens(a, brandTokens);
+  const wb = titleTokens(b, brandTokens);
   if (wa.length === 0 || wb.length === 0) return false;
+
+  // Un titre contenu dans l'autre seulement hors marque
+  const sa = wa.join(" ");
+  const sb = wb.join(" ");
+  if (sa && sb && (sa.includes(sb) || sb.includes(sa))) return true;
+
   const setA = new Set(wa);
   const hits = wb.filter((w) => setA.has(w)).length;
   const ratio = hits / Math.max(setA.size, wb.length);
-  // 2 mots forts en commun OU un titre quasi contenu dans l'autre
-  return hits >= 2 && ratio >= 0.4;
+  return hits >= 2 && ratio >= 0.45;
 }
 
 function articleKeepScore(a) {
@@ -145,7 +168,7 @@ function pickArticleToKeep(a, b) {
 }
 
 /** Paires d'articles publiés trop proches (à fusionner / distinguer). */
-export function findSimilarPublishedPairs(articles) {
+export function findSimilarPublishedPairs(articles, brandName = "") {
   const list = Array.isArray(articles) ? articles : [];
   const pairs = [];
   for (let i = 0; i < list.length; i++) {
@@ -153,10 +176,10 @@ export function findSimilarPublishedPairs(articles) {
       const a = list[i];
       const b = list[j];
       if (
-        titlesOverlap(a.title, b.title) ||
-        titlesOverlap(a.slug, b.slug) ||
-        titlesOverlap(a.title, b.slug) ||
-        titlesOverlap(a.slug, b.title)
+        titlesOverlap(a.title, b.title, brandName) ||
+        titlesOverlap(a.slug, b.slug, brandName) ||
+        titlesOverlap(a.title, b.slug, brandName) ||
+        titlesOverlap(a.slug, b.title, brandName)
       ) {
         const keep = pickArticleToKeep(a, b);
         const merge = keep.slug === a.slug ? b : a;
@@ -748,6 +771,8 @@ JSON strict, français simple, zéro jargon. 1 conseil = 1 action + chemin admin
 
 LANGUE — INTERDIT : GSC, CTR, SEO, GA4, organic, ranking, cannibalisation, too_young, meta (→ texte sous le lien Google), impressions (→ fois où Google a montré…), position (→ place dans Google).
 Ne pas inventer de chiffres. Pas de sujet déjà publié / ouvert.
+INTERDIT textes client : title_rewrites, quick_wins, action_id, « position 58 » (dire « encore loin dans Google »). Renvoi : « voir Meilleurs titres pour Google ci-dessous ».
+Ne fusionner QUE les paires de similar_article_pairs.
 
 DOUBLONS — similar_article_pairs : si non vide, priorité 1. quick_wins blog_article : garder keep_title (keep_slug), fusionner merge_title, dépublier le doublon. Suivre keep_rule (pas « le plus récent »).
 

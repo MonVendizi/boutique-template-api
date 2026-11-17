@@ -17,9 +17,10 @@ function getModel() {
 export async function buildAiContext() {
   const property = await ensureBoutiqueSeoProperty();
   const brand = await brandContext();
-  const [overview, opportunities, queries, pages, analytics, published_articles] =
+  // overview d'abord : la période sert au matching GSC des articles publiés
+  const overview = await getOverview("28d"); // IVE en cache seul — plus d'appel GA4 ici
+  const [opportunities, queries, pages, analytics, published_articles] =
     await Promise.all([
-      getOverview("28d"), // IVE en cache seul — plus d'appel GA4 ici
       getOpportunities(),
       getRanked("query", "28d"),
       getRanked("page", "28d"),

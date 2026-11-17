@@ -468,12 +468,12 @@ async function processInactiveCustomerEmails() {
   }
 }
 
-/** Planifie un job quotidien à 09:00 (heure serveur) */
-function scheduleDailyAt9(fn) {
-  const msUntilNext9 = () => {
+/** Planifie un job quotidien à HH:00 (heure serveur) */
+function scheduleDailyAtHour(hour, fn) {
+  const msUntilNext = () => {
     const now = new Date();
     const next = new Date(now);
-    next.setHours(9, 0, 0, 0);
+    next.setHours(hour, 0, 0, 0);
     if (next <= now) next.setDate(next.getDate() + 1);
     return next.getTime() - now.getTime();
   };
@@ -483,7 +483,73 @@ function scheduleDailyAt9(fn) {
     setInterval(() => {
       void fn();
     }, DAY_MS);
-  }, msUntilNext9());
+  }, msUntilNext());
+}
+
+function scheduleDailyAt9(fn) {
+  scheduleDailyAtHour(9, fn);
+}
+
+/** Lundi HH:00 (heure serveur) — analyse SEO IA hebdo */
+function scheduleWeeklyMondayAtHour(hour, fn) {
+  const msUntilNext = () => {
+    const now = new Date();
+    const next = new Date(now);
+    next.setHours(hour, 0, 0, 0);
+    const day = next.getDay(); // 0=dim … 1=lun
+    const addDays = day === 1 && next > now ? 0 : (8 - day) % 7 || 7;
+    if (!(day === 1 && next > now)) next.setDate(next.getDate() + addDays);
+    return next.getTime() - now.getTime();
+  };
+
+  setTimeout(() => {
+    void fn();
+    setInterval(() => {
+      const d = new Date();
+      if (d.getDay() === 1) void fn();
+    }, DAY_MS);
+  }, msUntilNext());
+}
+
+async function processBoutiqueSeoSync() {
+  try {
+    const { syncBoutiqueSeo } = await import("./lib/seo/sync.js");
+    const result = await syncBoutiqueSeo("cron");
+    console.log("SEO sync cron:", result?.status, result?.rowsUpserted ?? "");
+  } catch (err) {
+    console.error("SEO sync cron:", err?.message || err);
+  }
+}
+
+async function processBoutiqueSeoAiWeekly() {
+  try {
+    if (process.env.ANTHROPIC_API_KEY) {
+      const { generateAiReport } = await import("./lib/seo/ai-report.js");
+      const result = await generateAiReport();
+      console.log("SEO AI weekly (API):", result?.report?.id || "ok");
+      return;
+    }
+    const site = (process.env.SITE_URL || "").replace(/\/$/, "");
+    const secret = (process.env.CRON_SECRET || "").trim();
+    if (!site || !secret) {
+      console.warn(
+        "SEO AI weekly: ANTHROPIC_API_KEY absent et SITE_URL/CRON_SECRET manquants — skip",
+      );
+      return;
+    }
+    const res = await fetch(`${site}/api/cron/seo-ai-report`, {
+      headers: { Authorization: `Bearer ${secret}` },
+      cache: "no-store",
+    });
+    const body = await res.text().catch(() => "");
+    console.log(
+      "SEO AI weekly (Vercel):",
+      res.status,
+      body.slice(0, 200),
+    );
+  } catch (err) {
+    console.error("SEO AI weekly:", err?.message || err);
+  }
 }
 
 try {
@@ -531,6 +597,11 @@ try {
   // Clients inactifs 60j — tous les jours à 9h
   scheduleDailyAt9(processInactiveCustomerEmails);
   console.log("Job clients inactifs 60j planifié (quotidien 09:00)");
+
+  // SEO : sync GSC quotidienne 04:00 + analyse IA chaque lundi 05:00
+  scheduleDailyAtHour(4, processBoutiqueSeoSync);
+  scheduleWeeklyMondayAtHour(5, processBoutiqueSeoAiWeekly);
+  console.log("Jobs SEO planifiés (sync 04:00 / IA lundi 05:00)");
 } catch (err) {
   fastify.log.error(err);
   process.exit(1);

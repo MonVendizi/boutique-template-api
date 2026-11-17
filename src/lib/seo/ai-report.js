@@ -17,13 +17,18 @@ function getModel() {
 export async function buildAiContext() {
   const property = await ensureBoutiqueSeoProperty();
   const brand = await brandContext();
-  const [overview, opportunities, queries, pages, analytics] =
+  const [overview, opportunities, queries, pages, analytics, published_articles] =
     await Promise.all([
       getOverview("28d"), // IVE en cache seul — plus d'appel GA4 ici
       getOpportunities(),
       getRanked("query", "28d"),
       getRanked("page", "28d"),
       fetchGa4Snapshot(),
+      loadPublishedArticlesWithPerf(
+        property.id,
+        brand.site_url,
+        overview.ranges.current,
+      ),
     ]);
 
   const opp = opportunities.opportunities || {};
@@ -35,7 +40,15 @@ export async function buildAiContext() {
 
   return {
     propertyId: property.id,
-    brand,
+    brand: {
+      ...brand,
+      // Liste courte anti-doublon (détail + perf = published_articles racine)
+      published_articles: published_articles.map((a) => ({
+        title: a.title,
+        slug: a.slug,
+        url: a.url,
+      })),
+    },
     period: overview.ranges.current,
     kpi: overview.kpi,
     queries: queries.items.slice(0, 40).map(slimRanked),
@@ -46,6 +59,7 @@ export async function buildAiContext() {
     },
     analytics,
     editorial_pipeline,
+    published_articles,
   };
 }
 
@@ -242,22 +256,160 @@ async function brandContext() {
      WHERE key IN ('brand_name', 'seo_site_url', 'seo_title_default', 'seo_description_default')`,
   );
   const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
-  const { rows: posts } = await pool.query(
-    `SELECT title, slug FROM blog_posts
-     WHERE status = 'published'
-     ORDER BY published_at DESC NULLS LAST
-     LIMIT 15`,
-  );
   return {
     brand_name: map.brand_name || "Boutique",
     site_url: map.seo_site_url || process.env.SITE_URL || "",
     seo_title_default: map.seo_title_default || "",
     seo_description_default: map.seo_description_default || "",
-    published_articles: posts.map((p) => ({
+  };
+}
+
+function daysSince(iso) {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return null;
+  return Math.max(0, Math.floor((Date.now() - t) / (24 * 60 * 60 * 1000)));
+}
+
+function verdictForArticle({ days_live, gsc }) {
+  if (days_live != null && days_live < 14) return "too_young";
+  if (!gsc || gsc.impressions <= 0) {
+    return days_live != null && days_live >= 28 ? "no_signal" : "waiting";
+  }
+  if (gsc.position >= 11 && gsc.position <= 30 && gsc.impressions >= 20) {
+    return "expand_content";
+  }
+  if (gsc.position <= 10 && gsc.ctr < 0.02 && gsc.impressions >= 30) {
+    return "weak_ctr";
+  }
+  if (gsc.clicks >= 3 || gsc.impressions >= 50) return "performing";
+  return "thin_signal";
+}
+
+/**
+ * Articles publiés + contenu éditable + perf GSC 28j (pour corrections concrètes).
+ */
+async function loadPublishedArticlesWithPerf(propertyId, siteUrl, period) {
+  const { rows: posts } = await pool.query(
+    `SELECT title, slug, excerpt, seo_title, seo_description, seo_keywords,
+            sections, faq, published_at::text
+     FROM blog_posts
+     WHERE status = 'published'
+     ORDER BY published_at DESC NULLS LAST
+     LIMIT 20`,
+  );
+  if (posts.length === 0) return [];
+
+  const base = String(siteUrl || "")
+    .trim()
+    .replace(/\/$/, "");
+  const start = period?.start;
+  const end = period?.end;
+
+  let pageRows = [];
+  let queryRows = [];
+  if (start && end) {
+    const pagesRes = await pool.query(
+      `SELECT page,
+              SUM(clicks)::int AS clicks,
+              SUM(impressions)::int AS impressions,
+              CASE WHEN SUM(impressions) > 0
+                THEN SUM(clicks)::numeric / SUM(impressions) ELSE 0 END AS ctr,
+              CASE WHEN SUM(impressions) > 0
+                THEN SUM(position * impressions) / SUM(impressions) ELSE 0 END AS position
+       FROM seo_gsc_daily
+       WHERE property_id = $1 AND date >= $2::date AND date <= $3::date
+         AND page ILIKE '%/blog/%'
+       GROUP BY page`,
+      [propertyId, start, end],
+    );
+    pageRows = pagesRes.rows;
+
+    const queriesRes = await pool.query(
+      `SELECT page, query,
+              SUM(clicks)::int AS clicks,
+              SUM(impressions)::int AS impressions,
+              CASE WHEN SUM(impressions) > 0
+                THEN SUM(position * impressions) / SUM(impressions) ELSE 0 END AS position
+       FROM seo_gsc_daily
+       WHERE property_id = $1 AND date >= $2::date AND date <= $3::date
+         AND page ILIKE '%/blog/%'
+       GROUP BY page, query
+       HAVING SUM(impressions) > 0
+       ORDER BY SUM(impressions) DESC`,
+      [propertyId, start, end],
+    );
+    queryRows = queriesRes.rows;
+  }
+
+  function matchPage(slug) {
+    const needle = `/blog/${slug}`;
+    return (
+      pageRows.find((r) => {
+        const p = String(r.page || "");
+        try {
+          const path = new URL(p).pathname.replace(/\/$/, "");
+          return path === needle || path.endsWith(needle);
+        } catch {
+          return p.includes(needle);
+        }
+      }) || null
+    );
+  }
+
+  function topQueriesForSlug(slug, limit = 5) {
+    const needle = `/blog/${slug}`;
+    return queryRows
+      .filter((r) => String(r.page || "").includes(needle))
+      .slice(0, limit)
+      .map((r) => ({
+        query: r.query,
+        clicks: Number(r.clicks) || 0,
+        impressions: Number(r.impressions) || 0,
+        position: Number(Number(r.position).toFixed(1)),
+      }));
+  }
+
+  return posts.map((p) => {
+    const days_live = daysSince(p.published_at);
+    const page = matchPage(p.slug);
+    const gsc = page
+      ? {
+          page: page.page,
+          clicks: Number(page.clicks) || 0,
+          impressions: Number(page.impressions) || 0,
+          ctr: Number(Number(page.ctr).toFixed(4)),
+          position: Number(Number(page.position).toFixed(1)),
+        }
+      : null;
+    const sections = Array.isArray(p.sections) ? p.sections : [];
+    const faq = Array.isArray(p.faq) ? p.faq : [];
+    const keywords = Array.isArray(p.seo_keywords) ? p.seo_keywords : [];
+    return {
       title: p.title,
       slug: p.slug,
-    })),
-  };
+      url: base ? `${base}/blog/${p.slug}` : `/blog/${p.slug}`,
+      published_at: p.published_at,
+      days_live,
+      seo_title: p.seo_title || p.title || "",
+      seo_description: (p.seo_description || "").slice(0, 320),
+      excerpt: (p.excerpt || "").slice(0, 280),
+      seo_keywords: keywords
+        .filter((k) => typeof k === "string")
+        .slice(0, 8),
+      h2: sections
+        .map((s) => String(s?.h2 || "").trim())
+        .filter(Boolean)
+        .slice(0, 8),
+      faq_questions: faq
+        .map((f) => String(f?.question || "").trim())
+        .filter(Boolean)
+        .slice(0, 6),
+      gsc_28d: gsc,
+      top_queries: topQueriesForSlug(p.slug),
+      verdict: verdictForArticle({ days_live, gsc }),
+    };
+  });
 }
 
 async function fetchGa4Snapshot() {
@@ -355,7 +507,7 @@ function validatePayload(input) {
     traffic_actions: Array.isArray(input.traffic_actions)
       ? input.traffic_actions
       : [],
-    article_ideas: article_ideas.slice(0, 2).map((idea) => ({
+    article_ideas: article_ideas.slice(0, 1).map((idea) => ({
       title: String(idea.title),
       suggested_slug: String(idea.suggested_slug || ""),
       target_query: String(idea.target_query || ""),
@@ -397,14 +549,25 @@ S'appuyer uniquement sur les données fournies. Ne jamais inventer de chiffres.
 Croiser GSC et Analytics quand analytics.available = true.
 Distinguer impressions GSC ≠ sessions Analytics.
 Ne pas proposer de sujets déjà couverts (published_articles / open_ideas).
-FILE ÉDITORIALE (obligatoire) — voir context.editorial_pipeline :
-- Max 2 idées d'articles ouvertes à la fois.
-- Proposer au plus editorial_pipeline.slots_available idées (0, 1 ou 2).
-- Si slots_available = 0 : article_ideas DOIT être [].
-- Préférer 1 sujet data (requête avec signaux) plutôt que plusieurs sujets inventés.
-- Boucle : écrire → publier → mesurer avant d'en proposer d'autres.
-Chaque action doit être faisable dans l'admin boutique (admin_path obligatoire).
-AUTORISÉ : Personnalisation SEO, fiches produits (SEO/FAQ page de vente), Blog, Avis, Footer (URL profil seulement), Paramètres (lien avis Google).
+
+ARTICLES PUBLIÉS (obligatoire) — context.published_articles :
+Chaque entrée a titre, slug, seo_title/meta, H2, FAQ, gsc_28d, top_queries, verdict.
+Priorité ABSOLUE : corriger/renforcer ces pages AVANT de proposer un nouvel article.
+- too_young : ne pas juger, pas de suppression.
+- weak_ctr : title_rewrites concrets (nouveau seo_title + meta) via Admin → Blog → [slug].
+- expand_content : quick_wins = ajouter H2/FAQ ciblées sur top_queries (textes proposés).
+- no_signal (≥28j, 0 impr.) : quick_win = retarget titre/angle OU fusion/dépublication si hors sujet.
+- performing : éventuel renforcement léger (FAQ), pas de doublon de sujet.
+Cite toujours le slug et les chiffres fournis dans evidence.
+
+FILE ÉDITORIALE — context.editorial_pipeline :
+- Max 2 idées ouvertes. Proposer au plus slots_available (souvent 0 ou 1).
+- Si slots_available = 0 OU s'il reste des corrections utiles sur published_articles : article_ideas = [].
+- Préférer 1 sujet data plutôt que plusieurs sujets inventés.
+- Boucle : écrire → publier → mesurer 2–4 sem. → corriger → seulement alors nouveau sujet.
+
+Chaque action faisable dans l'admin (admin_path obligatoire).
+AUTORISÉ : Personnalisation SEO, fiches produits, Blog, Avis, Footer (URL profil), Paramètres (lien avis Google).
 INTERDIT : posts réseaux, Ads, GTM/GA4 config, Search Console technique, sitemap, DNS, code.
 Schéma:
 {
@@ -527,12 +690,20 @@ export async function listArticleIdeas() {
     const m = String(t.description || "").match(
       /\[seo-idea:([0-9a-f-]{36})\]/i,
     );
-    if (m) byIdea.set(m[1], { calendar_task_id: t.id, calendar_date: t.date });
+    if (m) {
+      byIdea.set(m[1].toLowerCase(), {
+        calendar_task_id: t.id,
+        calendar_date: t.date,
+      });
+    }
   }
 
-  return rows.map((idea) => ({
-    ...idea,
-    calendar_task_id: byIdea.get(idea.id)?.calendar_task_id ?? null,
-    calendar_date: byIdea.get(idea.id)?.calendar_date ?? null,
-  }));
+  return rows.map((idea) => {
+    const key = String(idea.id || "").toLowerCase();
+    return {
+      ...idea,
+      calendar_task_id: byIdea.get(key)?.calendar_task_id ?? null,
+      calendar_date: byIdea.get(key)?.calendar_date ?? null,
+    };
+  });
 }

@@ -2,7 +2,8 @@ import pool from "../../db/pool.js";
 
 /** File éditoriale courte : digeste + mesure avant de proposer plus. */
 export const MAX_OPEN_ARTICLE_IDEAS = 2;
-export const MAX_NEW_IDEAS_PER_REPORT = 2;
+/** 1 nouvel article max par run hebdo — le reste du rapport = corrections. */
+export const MAX_NEW_IDEAS_PER_REPORT = 1;
 
 const OPEN_STATUSES = ["proposee", "retenue", "redigee"];
 
@@ -40,7 +41,8 @@ export async function getEditorialPipeline() {
 /**
  * Garde au plus MAX_OPEN idées ouvertes.
  * Priorité : redigee > retenue > proposee (par priority).
- * Le surplus en "proposee" passe en rejetee (+ tâche calendrier retirée).
+ * Le surplus (proposee ou retenue) passe en rejetee (+ tâche calendrier retirée).
+ * On ne touche pas aux "redigee" en cours même au-delà du plafond.
  */
 export async function pruneExcessOpenIdeas() {
   const { rows } = await pool.query(
@@ -61,17 +63,22 @@ export async function pruneExcessOpenIdeas() {
   const keepIds = new Set(
     rows.slice(0, MAX_OPEN_ARTICLE_IDEAS).map((r) => r.id),
   );
-  const drop = rows.filter((r) => !keepIds.has(r.id) && r.status === "proposee");
-  // Si encore trop (trop de retenue/redigee), ne touche pas aux en-cours — seulement proposee
+  // Surplus : proposee ou retenue (jamais redigee — rédaction en cours)
+  const drop = rows.filter(
+    (r) =>
+      !keepIds.has(r.id) &&
+      (r.status === "proposee" || r.status === "retenue"),
+  );
   const rejected_ids = [];
 
   for (const idea of drop) {
-    await pool.query(
+    const { rowCount } = await pool.query(
       `UPDATE seo_article_ideas
        SET status = 'rejetee', updated_at = NOW()
-       WHERE id = $1 AND status = 'proposee'`,
-      [idea.id],
+       WHERE id = $1 AND status = ANY($2::text[])`,
+      [idea.id, ["proposee", "retenue"]],
     );
+    if (!rowCount) continue;
     rejected_ids.push(idea.id);
     try {
       const { deleteCalendarTaskForIdea } = await import(
@@ -84,7 +91,7 @@ export async function pruneExcessOpenIdeas() {
   }
 
   return {
-    kept: Math.min(rows.length, MAX_OPEN_ARTICLE_IDEAS),
+    kept: rows.length - rejected_ids.length,
     rejected: rejected_ids.length,
     rejected_ids,
   };

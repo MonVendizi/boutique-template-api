@@ -46,7 +46,7 @@ const BUSY_DATES = new Set([
 ]);
 
 const PREFERRED_DOW = new Set([2, 3]); // mardi, mercredi
-const FALLBACK_DOW = new Set([1, 2, 3, 4]); // lun–jeu si mardi/mercredi saturés
+const FALLBACK_DOW = new Set([1, 2, 3, 4, 5]); // lun–ven si besoin
 const MAX_NEW_PER_REPORT = 4;
 const MAX_CONTENT_PER_WEEK = 1;
 /** Ne compte que les tâches SEO-idée pour le plafond journalier (les seeds marketing ne bloquent plus). */
@@ -142,7 +142,8 @@ export async function scheduleArticleIdeas(ideas, options = {}) {
 
   const scheduled = [];
   const skipped = [];
-  let cursor = addDays(new Date(), 3);
+  // Dès demain — visible rapidement dans le calendrier du mois en cours
+  let cursor = addDays(new Date(), 1);
   const horizon = addDays(new Date(), HORIZON_DAYS);
 
   function findSlot(fromDate, allowedDow) {
@@ -242,6 +243,9 @@ export async function scheduleArticleIdeas(ideas, options = {}) {
 
 /** Planifie les idées existantes pas encore au calendrier (backfill, plafond file). */
 export async function scheduleUnplannedArticleIdeas() {
+  const { syncOpenIdeasWithPublishedBlog } = await import("./ai-report.js");
+  const blogSync = await syncOpenIdeasWithPublishedBlog().catch(() => null);
+
   const { pruneExcessOpenIdeas, MAX_OPEN_ARTICLE_IDEAS } = await import(
     "./editorialPipeline.js"
   );
@@ -260,7 +264,10 @@ export async function scheduleUnplannedArticleIdeas() {
      LIMIT $1`,
     [MAX_OPEN_ARTICLE_IDEAS],
   );
-  return scheduleArticleIdeas(rows, { maxNew: MAX_OPEN_ARTICLE_IDEAS });
+  const result = await scheduleArticleIdeas(rows, {
+    maxNew: MAX_OPEN_ARTICLE_IDEAS,
+  });
+  return { ...result, blog_sync: blogSync };
 }
 
 export async function findCalendarTaskForIdea(ideaId) {

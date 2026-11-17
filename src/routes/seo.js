@@ -199,6 +199,7 @@ export default async function seoRoutes(fastify) {
         scheduled: calendar.scheduled || [],
         skipped: calendar.skipped || [],
         cleanup: calendar.cleanup || null,
+        blog_sync: calendar.blog_sync || null,
         count: (calendar.scheduled || []).length,
         pruned,
         pipeline: await getEditorialPipeline(),

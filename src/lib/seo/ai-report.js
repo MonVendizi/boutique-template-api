@@ -32,6 +32,8 @@ export async function buildAiContext() {
     ]);
 
   const opp = opportunities.opportunities || {};
+  await syncOpenIdeasWithPublishedBlog().catch(() => null);
+
   const { getEditorialPipeline, pruneExcessOpenIdeas } = await import(
     "./editorialPipeline.js"
   );
@@ -73,6 +75,136 @@ function slimRanked(row) {
   };
 }
 
+/** Normalise titre/slug pour détecter doublons proches. */
+export function normalizeSeoText(raw) {
+  return String(raw || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Vrai si deux titres/slugs couvrent le même sujet (anti-cannibalisation). */
+export function titlesOverlap(a, b) {
+  const na = normalizeSeoText(a);
+  const nb = normalizeSeoText(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  if (na.includes(nb) || nb.includes(na)) return true;
+  const stop = new Set([
+    "pour",
+    "avec",
+    "dans",
+    "une",
+    "des",
+    "les",
+    "votre",
+    "comment",
+    "quel",
+    "quelle",
+    "quels",
+    "guide",
+    "complet",
+    "article",
+  ]);
+  const wa = na.split(/[\s-]+/).filter((w) => w.length > 3 && !stop.has(w));
+  const wb = nb.split(/[\s-]+/).filter((w) => w.length > 3 && !stop.has(w));
+  if (wa.length === 0 || wb.length === 0) return false;
+  const setA = new Set(wa);
+  const hits = wb.filter((w) => setA.has(w)).length;
+  const ratio = hits / Math.max(setA.size, wb.length);
+  return hits >= 2 && ratio >= 0.5;
+}
+
+/**
+ * Si la cliente a publié dans Blog sans passer par « À écrire »,
+ * marque les idées ouvertes correspondantes comme publiées.
+ */
+export async function syncOpenIdeasWithPublishedBlog() {
+  const property = await ensureBoutiqueSeoProperty();
+  const { rows: posts } = await pool.query(
+    `SELECT title, slug, published_at::text
+     FROM blog_posts
+     WHERE status = 'published'
+     ORDER BY published_at DESC NULLS LAST
+     LIMIT 40`,
+  );
+  if (posts.length === 0) return { matched: 0, ids: [] };
+
+  const { rows: ideas } = await pool.query(
+    `SELECT id, title, suggested_slug, target_query, status
+     FROM seo_article_ideas
+     WHERE property_id = $1
+       AND status = ANY($2::text[])`,
+    [property.id, ["proposee", "retenue", "redigee"]],
+  );
+  if (ideas.length === 0) return { matched: 0, ids: [] };
+
+  const site =
+    (await brandContext()).site_url.replace(/\/$/, "") ||
+    (process.env.SITE_URL || "").replace(/\/$/, "");
+
+  const matchedIds = [];
+  for (const idea of ideas) {
+    const hit = posts.find((p) => {
+      if (
+        idea.suggested_slug &&
+        normalizeSeoText(idea.suggested_slug) === normalizeSeoText(p.slug)
+      ) {
+        return true;
+      }
+      if (titlesOverlap(idea.title, p.title)) return true;
+      if (idea.target_query && titlesOverlap(idea.target_query, p.title)) {
+        return true;
+      }
+      if (idea.target_query && titlesOverlap(idea.target_query, p.slug)) {
+        return true;
+      }
+      return false;
+    });
+    if (!hit) continue;
+
+    const url = site ? `${site}/blog/${hit.slug}` : `/blog/${hit.slug}`;
+    await pool.query(
+      `UPDATE seo_article_ideas
+       SET status = 'publiee',
+           published_url = COALESCE(published_url, $2),
+           updated_at = NOW()
+       WHERE id = $1`,
+      [idea.id, url],
+    );
+    matchedIds.push(idea.id);
+    try {
+      const { deleteCalendarTaskForIdea } = await import(
+        "./scheduleArticleIdeas.js"
+      );
+      await deleteCalendarTaskForIdea(idea.id);
+    } catch {
+      // ignore
+    }
+  }
+
+  return { matched: matchedIds.length, ids: matchedIds };
+}
+
+function filterIdeasAgainstPublished(ideas, published) {
+  const posts = Array.isArray(published) ? published : [];
+  return (Array.isArray(ideas) ? ideas : []).filter((idea) => {
+    const title = idea?.title || "";
+    const slug = idea?.suggested_slug || "";
+    const query = idea?.target_query || "";
+    return !posts.some(
+      (p) =>
+        titlesOverlap(title, p.title) ||
+        titlesOverlap(title, p.slug) ||
+        (slug && titlesOverlap(slug, p.slug)) ||
+        (query && titlesOverlap(query, p.title)),
+    );
+  });
+}
+
 /** Enregistre un rapport déjà généré (ex. depuis Vercel). */
 export async function persistAiReport(input) {
   const property = await ensureBoutiqueSeoProperty();
@@ -84,12 +216,21 @@ export async function persistAiReport(input) {
   const periodEnd =
     String(input.period_end || "").trim() || periodStart;
 
+  await syncOpenIdeasWithPublishedBlog().catch(() => null);
   const { getEditorialPipeline, pruneExcessOpenIdeas } = await import(
     "./editorialPipeline.js"
   );
   await pruneExcessOpenIdeas().catch(() => null);
   const pipeline = await getEditorialPipeline();
-  const ideasToInsert = payload.article_ideas.slice(
+
+  const { rows: publishedRows } = await pool.query(
+    `SELECT title, slug FROM blog_posts WHERE status = 'published' LIMIT 40`,
+  );
+  const freshIdeas = filterIdeasAgainstPublished(
+    payload.article_ideas,
+    publishedRows,
+  );
+  const ideasToInsert = freshIdeas.slice(
     0,
     Math.min(pipeline.slots_available, pipeline.max_new_per_report),
   );
@@ -549,6 +690,8 @@ S'appuyer uniquement sur les données fournies. Ne jamais inventer de chiffres.
 Croiser GSC et Analytics quand analytics.available = true.
 Distinguer impressions GSC ≠ sessions Analytics.
 Ne pas proposer de sujets déjà couverts (published_articles / open_ideas).
+INTERDIT de « recréer » un article déjà dans published_articles (même titre proche, même intention, ex. deux « tableau bord de mer »).
+Si deux articles publiés se cannibalisent : proposer une fusion/renforcement (quick_wins), PAS un 3ᵉ article.
 
 ARTICLES PUBLIÉS (obligatoire) — context.published_articles :
 Chaque entrée a titre, slug, seo_title/meta, H2, FAQ, gsc_28d, top_queries, verdict.
@@ -664,6 +807,11 @@ export async function listAiReports(limit = 10) {
 
 export async function listArticleIdeas() {
   const property = await ensureBoutiqueSeoProperty();
+  try {
+    await syncOpenIdeasWithPublishedBlog();
+  } catch {
+    // ignore
+  }
   try {
     const { pruneExcessOpenIdeas } = await import("./editorialPipeline.js");
     await pruneExcessOpenIdeas();

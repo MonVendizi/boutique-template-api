@@ -8,9 +8,55 @@ import {
 } from "./analytics.js";
 import { loadGoogleServiceAccountCredentials } from "./gsc.js";
 import { ensureBoutiqueSeoProperty } from "./property.js";
+import { IVE_TARGETS, IVE_WEIGHTS } from "./visibility.js";
 
 function getModel() {
   return (process.env.SEO_AI_MODEL || process.env.ANTHROPIC_MODEL || "").trim();
+}
+
+/** Bloc IVE compact pour le prompt IA (objectif = faire monter le score). */
+export function slimIveForAi(iveView) {
+  const current = iveView?.current;
+  if (!current) {
+    return {
+      available: false,
+      score: null,
+      delta: null,
+      pillars: null,
+      weakest_pillar: null,
+      targets: IVE_TARGETS,
+      weights: IVE_WEIGHTS,
+      note: "Pas encore de mesure — prioriser la découverte Google puis les clics.",
+    };
+  }
+  const pillars = {
+    discovery: Number(current.discovery),
+    attraction: Number(current.attraction),
+    traffic: Number(current.traffic),
+  };
+  const weakest_pillar = Object.entries(pillars).sort(
+    (a, b) => a[1] - b[1],
+  )[0]?.[0];
+  return {
+    available: true,
+    score: Number(current.ive),
+    delta: iveView.delta,
+    week_start: current.week_start,
+    pillars,
+    weakest_pillar,
+    raw: {
+      impressions: current.impressions,
+      clicks: current.clicks,
+      ctr: current.ctr,
+      top10_share: current.top10_share,
+      organic_sessions: current.organic_sessions,
+    },
+    analytics_available: Boolean(current.analytics_available),
+    targets: IVE_TARGETS,
+    weights: IVE_WEIGHTS,
+    objective:
+      "Faire monter le score de visibilité vers 100 en priorisant le pilier le plus faible.",
+  };
 }
 
 /** Contexte GSC + Analytics pour analyse IA (sans Anthropic). Listes réduites pour éviter 504. */
@@ -58,6 +104,7 @@ export async function buildAiContext() {
     },
     period: overview.ranges.current,
     kpi: overview.kpi,
+    ive: slimIveForAi(overview.ive),
     queries: queries.items.slice(0, 40).map(slimRanked),
     pages: pages.items.slice(0, 25).map(slimRanked),
     opportunities: {
@@ -769,6 +816,14 @@ async function callClaude(model, brand, context) {
   const system = `Tu es un conseiller boutique pour « ${brand.brand_name} » (${brand.site_url}).
 JSON strict, français simple, zéro jargon. 1 conseil = 1 action + chemin admin exact.
 
+OBJECTIF VISIBILITÉ (context.ive) — priorité absolue :
+But : faire monter le score de visibilité (0–100) chaque semaine, vers 100.
+Piliers : découverte (Google te montre), attraction (les gens cliquent), trafic (visiteurs depuis Google).
+Toujours prioriser le pilier le plus faible (weakest_pillar) dans summary + actions.
+Si delta négatif ou nul : le dire simplement et proposer 1–3 actions pour remonter.
+Textes client : « score de visibilité », « découverte / attraction / visiteurs Google » — jamais IVE, GSC, CTR.
+Cibles internes (~milieu d'échelle) : ~5000 affichages, ~200 clics, ~3 % de clics, ~150 visiteurs Google.
+
 LANGUE — INTERDIT : GSC, CTR, SEO, GA4, organic, ranking, cannibalisation, too_young, meta (→ texte sous le lien Google), impressions (→ fois où Google a montré…), position (→ place dans Google).
 Ne pas inventer de chiffres. Pas de sujet déjà publié / ouvert.
 INTERDIT textes client : title_rewrites, quick_wins, action_id, « position 58 » (dire « encore loin dans Google »). Renvoi : « voir Meilleurs titres pour Google ci-dessous ».
@@ -776,7 +831,7 @@ Ne fusionner QUE les paires de similar_article_pairs.
 
 DOUBLONS — similar_article_pairs : si non vide, priorité 1. quick_wins blog_article : garder keep_title (keep_slug), fusionner merge_title, dépublier le doublon. Suivre keep_rule (pas « le plus récent »).
 
-summary 4–6 phrases ; rassurer si accueil bas sur boutique jeune ; si article_ideas=[] expliquer l'attente 2–4 semaines.
+summary 4–6 phrases ; commencer par le score de visibilité + pilier à renforcer ; rassurer si accueil bas sur boutique jeune ; si article_ideas=[] expliquer l'attente 2–4 semaines.
 
 CHEMINS : FAQ = Admin → Personnalisation → Légal → FAQ ; accueil texte Google = Admin → Personnalisation → SEO + title_rewrites home_meta obligatoire ; blog = Admin → Blog. Jamais Admin → Pages.
 AUTORISÉ : Personnalisation, produits, Blog, Avis, Footer URL, Paramètres avis Google.

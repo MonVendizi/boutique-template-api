@@ -3,13 +3,19 @@ import pool from "../../db/pool.js";
 import { loadGoogleServiceAccountCredentials } from "./gsc.js";
 import { buildRanges, resolveDataEnd } from "./analytics.js";
 
-const TARGETS = {
+export const IVE_TARGETS = {
   impressions: 5000,
   clicks: 200,
   ctr: 0.03,
   organicSessions: 150,
 };
-const WEIGHTS = { discovery: 0.35, attraction: 0.35, traffic: 0.3 };
+export const IVE_WEIGHTS = {
+  discovery: 0.35,
+  attraction: 0.35,
+  traffic: 0.3,
+};
+const TARGETS = IVE_TARGETS;
+const WEIGHTS = IVE_WEIGHTS;
 
 function clamp(n, min = 0, max = 100) {
   return Math.min(max, Math.max(min, n));

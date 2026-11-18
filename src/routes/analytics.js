@@ -66,12 +66,14 @@ export default async function analyticsRoutes(fastify) {
       [page, days]
     );
 
+    // Sessions distinctes par seuil (évite >100 % si plusieurs events / session)
     const { rows: scrolls } = await pool.query(
-      `SELECT depth, COUNT(*)::int AS count
+      `SELECT depth, COUNT(DISTINCT session_id)::int AS count
        FROM analytics_events
        WHERE type = 'scroll'
          AND page = $1
          AND created_at >= NOW() - make_interval(days => $2)
+         AND session_id IS NOT NULL
        GROUP BY depth
        ORDER BY depth ASC`,
       [page, days]

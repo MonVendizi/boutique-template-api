@@ -61,7 +61,8 @@ async function fetchAllDailyRows(siteUrl, startDate, endDate) {
       rowLimit: PAGE_SIZE,
       startRow,
       type: "web",
-      dataState: "final",
+      // "all" = données fraîches (sinon sync success avec 0 ligne récente)
+      dataState: "all",
     });
     const rows = data.rows || [];
     for (const row of rows) {

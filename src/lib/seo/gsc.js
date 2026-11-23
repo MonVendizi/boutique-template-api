@@ -133,7 +133,7 @@ export async function querySearchAnalytics(input) {
         rowLimit: input.rowLimit ?? 10,
         startRow: input.startRow ?? 0,
         type: input.type || "web",
-        dataState: input.dataState || "final",
+        dataState: input.dataState || "all",
       }),
     });
   } catch (error) {

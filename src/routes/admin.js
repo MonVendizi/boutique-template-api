@@ -1450,6 +1450,11 @@ export default async function adminRoutes(fastify) {
         cwd: __apiRoot,
         env: process.env,
       });
+      execSync("node scripts/migrate-variant-stock.js", {
+        stdio: "inherit",
+        cwd: __apiRoot,
+        env: process.env,
+      });
       execSync("node scripts/migrate-seo.js", {
         stdio: "inherit",
         cwd: __apiRoot,

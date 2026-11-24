@@ -25,6 +25,7 @@ import slugsRoutes from "./routes/slugs.js";
 import totpRoutes from "./routes/totp.js";
 import moneyRoutes from "./routes/money.js";
 import pool from "./db/pool.js";
+import { ensureVariantStockSchema } from "./lib/variantStock.js";
 import {
   sendAbandonedCartEmail,
   sendCalendarReminder,
@@ -553,6 +554,9 @@ async function processBoutiqueSeoAiWeekly() {
 }
 
 try {
+  await ensureVariantStockSchema(pool);
+  console.log("Schéma stock variantes vérifié (idempotent)");
+
   await fastify.listen({ port: PORT, host: "0.0.0.0" });
   console.log(`Boutique API → http://localhost:${PORT}`);
 

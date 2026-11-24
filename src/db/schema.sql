@@ -96,6 +96,8 @@ CREATE TABLE IF NOT EXISTS stock_movements (
   created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS variant_label VARCHAR(255);
+
 CREATE INDEX IF NOT EXISTS idx_stock_movements_product ON stock_movements (product_id);
 CREATE INDEX IF NOT EXISTS idx_stock_movements_order ON stock_movements (order_id);
 

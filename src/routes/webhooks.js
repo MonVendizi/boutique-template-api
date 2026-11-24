@@ -10,8 +10,12 @@ import { applyAffiliateCommission } from "./affiliates.js";
 import { convertReferral } from "./referrals.js";
 import { sendSMS } from "../lib/sms.js";
 import { getBrandName, getSiteUrl } from "../lib/brandSettings.js";
+import {
+  assertItemsHaveStock,
+  decrementItemsStock,
+} from "../lib/variantStock.js";
 
-async function fulfillOrderRecord({
+export async function fulfillOrderRecord({
   stripeSessionId,
   stripePaymentIntentId,
   metadataItems,
@@ -46,20 +50,7 @@ async function fulfillOrderRecord({
   try {
     await client.query("BEGIN");
 
-    for (const item of metadataItems) {
-      const { rows } = await client.query(
-        "SELECT stock FROM products WHERE id = $1 FOR UPDATE",
-        [item.product_id]
-      );
-
-      if (rows.length === 0) {
-        throw new Error(`Produit ${item.product_id} introuvable`);
-      }
-
-      if (rows[0].stock < item.quantity) {
-        throw new Error(`Stock insuffisant pour ${item.slug}`);
-      }
-    }
+    await assertItemsHaveStock(client, metadataItems);
 
     const code = String(promoCode || "")
       .trim()
@@ -89,18 +80,7 @@ async function fulfillOrderRecord({
 
     const order = orderRows[0];
 
-    for (const item of metadataItems) {
-      await client.query(
-        "UPDATE products SET stock = stock - $1 WHERE id = $2",
-        [item.quantity, item.product_id]
-      );
-
-      await client.query(
-        `INSERT INTO stock_movements (product_id, order_id, quantity_change, reason)
-         VALUES ($1, $2, $3, 'order')`,
-        [item.product_id, order.id, -item.quantity]
-      );
-    }
+    await decrementItemsStock(client, order.id, metadataItems);
 
     if (code) {
       await client.query(

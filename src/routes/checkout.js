@@ -7,8 +7,39 @@ import {
 import { computeReferralDiscount } from "./referrals.js";
 import { isBotEmail } from "../lib/botEmail.js";
 import { getSiteUrl } from "../lib/brandSettings.js";
+import { assertItemsHaveStock } from "../lib/variantStock.js";
 
 const SHIPPING_CENTS = 490; // 4,90€
+
+function parseMetadataItems(metadata) {
+  if (!metadata || typeof metadata !== "object") return [];
+  const raw = metadata.items;
+  if (!raw) return [];
+  try {
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function stockErrorReply(reply, err) {
+  const status =
+    err.code === "OUT_OF_STOCK" ||
+    err.code === "VARIANT_REQUIRED" ||
+    err.code === "VARIANT_NOT_FOUND"
+      ? 409
+      : err.code === "PRODUCT_NOT_FOUND"
+        ? 404
+        : 400;
+  return reply.code(status).send({
+    error: err.message || "Stock insuffisant",
+    code: err.code || "OUT_OF_STOCK",
+    available: err.available,
+    slug: err.slug,
+    label: err.label,
+  });
+}
 
 export default async function checkoutRoutes(fastify) {
   fastify.get("/stripe-config", async () => {
@@ -23,6 +54,23 @@ export default async function checkoutRoutes(fastify) {
     const amountCents = Number(amount);
     if (!Number.isFinite(amountCents) || amountCents < 50) {
       return reply.code(400).send({ error: "Montant invalide" });
+    }
+
+    const items = parseMetadataItems(metadata);
+    if (items.length) {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await assertItemsHaveStock(client, items);
+        await client.query("COMMIT");
+      } catch (err) {
+        await client.query("ROLLBACK").catch(() => null);
+        if (err.code) return stockErrorReply(reply, err);
+        request.log.error(err);
+        return reply.code(500).send({ error: err.message || "Erreur stock" });
+      } finally {
+        client.release();
+      }
     }
 
     try {
@@ -70,7 +118,8 @@ export default async function checkoutRoutes(fastify) {
 
     const slugs = items.map((i) => i.slug);
     const { rows: products } = await pool.query(
-      `SELECT id, name, slug, price_cents, currency, stock, sku
+      `SELECT id, name, slug, price_cents, currency, stock, sku,
+              has_variants, variant_type
        FROM products
        WHERE slug = ANY($1) AND active = true`,
       [slugs]
@@ -92,15 +141,6 @@ export default async function checkoutRoutes(fastify) {
 
     for (const item of items) {
       const product = productMap[item.slug];
-
-      if (product.stock < item.quantity) {
-        return reply.code(409).send({
-          error: "Stock insuffisant",
-          slug: product.slug,
-          available: product.stock,
-          requested: item.quantity,
-        });
-      }
 
       currency = product.currency || currency;
       subtotalCents += product.price_cents * item.quantity;
@@ -124,16 +164,29 @@ export default async function checkoutRoutes(fastify) {
         sku: product.sku,
         quantity: item.quantity,
         unit_price_cents: product.price_cents,
-        ...(item.variant
+        ...(item.variant?.label
           ? {
               variant: {
-                type: item.variant.type,
+                type: item.variant.type || product.variant_type || "size",
                 label: item.variant.label,
                 stock: item.variant.stock,
               },
             }
           : {}),
       });
+    }
+
+    const stockClient = await pool.connect();
+    try {
+      await stockClient.query("BEGIN");
+      await assertItemsHaveStock(stockClient, metadataItems);
+      await stockClient.query("COMMIT");
+    } catch (err) {
+      await stockClient.query("ROLLBACK").catch(() => null);
+      if (err.code) return stockErrorReply(reply, err);
+      throw err;
+    } finally {
+      stockClient.release();
     }
 
     let appliedPromo = null;

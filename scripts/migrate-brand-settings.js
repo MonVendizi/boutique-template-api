@@ -93,6 +93,13 @@ const defaults = [
   ["footer_pinterest", "", "url", "footer", "Pinterest URL"],
   ["footer_whatsapp", "", "url", "footer", "WhatsApp URL"],
   [
+    "footer_vendizi_credit",
+    "true",
+    "boolean",
+    "footer",
+    "Afficher la mention Boutique créée avec Vendizi",
+  ],
+  [
     "trust_badges",
     '[{"icon":"🌿","text":"100% Naturel"},{"icon":"🚚","text":"Livraison rapide"},{"icon":"⭐","text":"Avis vérifiés"},{"icon":"🔒","text":"Paiement sécurisé"}]',
     "json",

@@ -7,6 +7,10 @@ import {
   getRanked,
 } from "./analytics.js";
 import { loadGoogleServiceAccountCredentials } from "./gsc.js";
+import {
+  buildInternalLinksReport,
+  slimInternalLinksForAi,
+} from "./internal-links.js";
 import { ensureBoutiqueSeoProperty } from "./property.js";
 import { IVE_TARGETS, IVE_WEIGHTS } from "./visibility.js";
 
@@ -65,7 +69,8 @@ export async function buildAiContext() {
   const brand = await brandContext();
   // overview d'abord : la période sert au matching GSC des articles publiés
   const overview = await getOverview("28d"); // IVE en cache seul — plus d'appel GA4 ici
-  const [opportunities, queries, pages, analytics, published_articles] =
+  const impressionsBySlug = new Map();
+  const [opportunities, queries, pages, analytics, published_articles, internalLinksRaw] =
     await Promise.all([
       getOpportunities(),
       getRanked("query", "28d"),
@@ -76,7 +81,35 @@ export async function buildAiContext() {
         brand.site_url,
         overview.ranges.current,
       ),
+      buildInternalLinksReport({ siteUrl: brand.site_url }).catch((err) => {
+        console.warn("[seo] internal-links:", err?.message || err);
+        return null;
+      }),
     ]);
+
+  for (const a of published_articles) {
+    const imp = Number(a?.gsc_28d?.impressions) || 0;
+    if (a?.slug) impressionsBySlug.set(String(a.slug), imp);
+  }
+
+  // Réinjecter impressions GSC dans le bilan si disponible
+  let internal_links = null;
+  if (internalLinksRaw) {
+    if (impressionsBySlug.size) {
+      for (const row of internalLinksRaw.per_article || []) {
+        row.impressions = impressionsBySlug.get(String(row.slug)) || 0;
+      }
+      for (const row of internalLinksRaw.articles_without_internal || []) {
+        row.impressions = impressionsBySlug.get(String(row.slug)) || 0;
+      }
+    }
+    const { rows: sectionRows } = await pool
+      .query(
+        `SELECT slug, sections FROM blog_posts WHERE status = 'published'`,
+      )
+      .catch(() => ({ rows: [] }));
+    internal_links = slimInternalLinksForAi(internalLinksRaw, sectionRows);
+  }
 
   const opp = opportunities.opportunities || {};
   await syncOpenIdeasWithPublishedBlog().catch(() => null);
@@ -115,6 +148,7 @@ export async function buildAiContext() {
     editorial_pipeline,
     published_articles,
     similar_article_pairs,
+    internal_links,
   };
 }
 
@@ -755,6 +789,72 @@ function extractJsonObject(text) {
   return JSON.parse(raw.slice(start, end + 1));
 }
 
+const VENDIZI_RE = /vendizi\.fr|vendizi\b/i;
+
+/** Normalise ≤3 conseils de liens (pages boutique uniquement). */
+export function normalizeLinkTips(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const tip of raw) {
+    if (!tip || typeof tip !== "object") continue;
+    const article_slug = String(tip.article_slug || "").trim();
+    const article_title = String(tip.article_title || "").trim();
+    const sentence = String(tip.sentence || "").trim();
+    const anchor_words = String(tip.anchor_words || "").trim();
+    const target_path = String(tip.target_path || tip.replacement_path || "").trim();
+    const markdown_link = String(tip.markdown_link || "").trim();
+    const blob = [
+      article_title,
+      sentence,
+      anchor_words,
+      tip.target_name,
+      target_path,
+      markdown_link,
+      tip.broken_href,
+      tip.replacement_name,
+      tip.replacement_path,
+      tip.action,
+    ]
+      .map((x) => String(x || ""))
+      .join(" ");
+    if (VENDIZI_RE.test(blob)) continue;
+    // Cible = chemin relatif boutique uniquement (sauf idée d'article sans cible)
+    if (
+      tip.tip_type !== "new_article_idea" &&
+      (!target_path.startsWith("/") || /^https?:\/\//i.test(target_path))
+    ) {
+      continue;
+    }
+    if (!article_title && !article_slug && tip.tip_type !== "new_article_idea") {
+      continue;
+    }
+    out.push({
+      impact: [1, 2, 3].includes(Number(tip.impact)) ? Number(tip.impact) : out.length + 1,
+      tip_type: String(tip.tip_type || "add_link"),
+      article_title,
+      article_slug,
+      section_h2: String(tip.section_h2 || "").trim(),
+      sentence,
+      anchor_words,
+      target_name: String(tip.target_name || tip.replacement_name || "").trim(),
+      target_path: target_path.startsWith("/") ? target_path : "",
+      markdown_link:
+        markdown_link ||
+        (anchor_words && target_path.startsWith("/")
+          ? `[${anchor_words}](${target_path})`
+          : ""),
+      broken_href: String(tip.broken_href || "").trim(),
+      broken_reason: String(tip.broken_reason || "").trim(),
+      replacement_name: String(tip.replacement_name || "").trim(),
+      replacement_path: String(tip.replacement_path || "").trim(),
+      new_article_idea: String(tip.new_article_idea || "").trim(),
+      admin_path: "Admin → Blog",
+    });
+    if (out.length >= 3) break;
+  }
+  return out.sort((a, b) => a.impact - b.impact);
+}
+
 function validatePayload(input) {
   if (!input || typeof input !== "object") throw new Error("Payload invalide");
   const sufficiency = String(input.data_sufficiency || "");
@@ -777,6 +877,7 @@ function validatePayload(input) {
     traffic_actions: Array.isArray(input.traffic_actions)
       ? input.traffic_actions
       : [],
+    link_tips: normalizeLinkTips(input.link_tips),
     article_ideas: article_ideas.slice(0, 1).map((idea) => ({
       title: String(idea.title),
       suggested_slug: String(idea.suggested_slug || ""),
@@ -837,6 +938,17 @@ CHEMINS : FAQ = Admin → Personnalisation → Légal → FAQ ; accueil texte Go
 AUTORISÉ : Personnalisation, produits, Blog, Avis, Footer URL, Paramètres avis Google.
 INTERDIT : réseaux, Ads, GTM/GA4, Search Console, sitemap, DNS, code.
 channel : Google ou Blog. Max 3 quick_wins, 2 title_rewrites, 2 traffic_actions.
+
+LIENS DANS LES ARTICLES (context.internal_links) — max 3 link_tips, impact 1 = plus utile :
+- Uniquement vers des pages de CETTE boutique (produit /boutique?category=… /blog/… /boutique /a-propos…).
+- INTERDIT : recommander un lien vers Vendizi (vendizi.fr) ou toute page hors boutique.
+- INTERDIT : fixer un nombre de liens externes à atteindre. Un lien externe n’est suggérable que s’il cite une source réellement utile au lecteur, sans chiffre — et hors link_tips (link_tips = pages boutique seulement).
+- Langage simple affiché au vendeur : pas de « maillage », « ancre », « backlink ».
+- Chaque tip : article_title + article_slug, section_h2 (titre H2), sentence (phrase EXACTE du texte), anchor_words (mots à transformer en lien), target_name + target_path, markdown_link prêt à copier « [mots](/chemin) ».
+- Liens cassés (broken_links) : tip_type fix_broken + broken_href + broken_reason + replacement_name/path.
+- Produit/catégorie jamais cité : tip_type cite_product|cite_category dans l’article le plus proche ; sinon tip_type new_article_idea avec new_article_idea.
+- Classer par impact (produits phares / articles avec le plus d’affichages Google d’abord).
+
 Schéma:
 {
   "data_sufficiency":"ok|low",
@@ -844,6 +956,7 @@ Schéma:
   "quick_wins":[{"page":"","query":"","action":"","evidence":"","admin_path":"Admin → …"}],
   "title_rewrites":[{"page":"","current_issue":"","suggested_title":"","suggested_meta_description":"","admin_path":"Admin → …"}],
   "traffic_actions":[{"channel":"","action":"","evidence":"","priority":1,"admin_path":"Admin → …"}],
+  "link_tips":[{"impact":1,"tip_type":"add_link|fix_broken|cite_product|cite_category|new_article_idea","article_title":"","article_slug":"","section_h2":"","sentence":"","anchor_words":"","target_name":"","target_path":"/produits/…","markdown_link":"[mots](/produits/…)","broken_href":"","broken_reason":"","replacement_name":"","replacement_path":"","new_article_idea":""}],
   "article_ideas":[]
 }`;
 

@@ -8,6 +8,7 @@ import {
   persistAiReport,
   updateArticleIdea,
 } from "../lib/seo/ai-report.js";
+import { buildInternalLinksReport } from "../lib/seo/internal-links.js";
 import { scheduleUnplannedArticleIdeas } from "../lib/seo/scheduleArticleIdeas.js";
 import { ensureBoutiqueSeoProperty } from "../lib/seo/property.js";
 import { syncBoutiqueSeo } from "../lib/seo/sync.js";
@@ -111,6 +112,20 @@ export default async function seoRoutes(fastify) {
     if (!(await checkAdmin(request, reply))) return;
     try {
       return await buildAiContext();
+    } catch (error) {
+      return reply
+        .code(500)
+        .send({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  /** Bilan des liens internes des articles (produits, catégories, pages, articles). */
+  fastify.get("/admin/seo/internal-links", async (request, reply) => {
+    if (!(await checkAdmin(request, reply))) return;
+    try {
+      const property = await ensureBoutiqueSeoProperty().catch(() => null);
+      const siteUrl = property?.site_url || process.env.SITE_URL || "";
+      return await buildInternalLinksReport({ siteUrl });
     } catch (error) {
       return reply
         .code(500)

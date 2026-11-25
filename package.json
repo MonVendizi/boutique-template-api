@@ -32,7 +32,7 @@
     "deploy:client": "node scripts/deploy-new-client.js",
     "migrate:variants": "node scripts/migrate-variants.js",
     "migrate:variant-stock": "node scripts/migrate-variant-stock.js",
-    "test": "node --test src/lib/variantStock.test.js src/lib/blogSanitize.test.js src/routes/webhooks.stock.test.js",
+    "test": "node --test src/lib/variantStock.test.js src/lib/blogSanitize.test.js src/lib/seo/internal-links.test.js src/lib/seo/link-tips.test.js src/routes/webhooks.stock.test.js",
     "test:stock": "node --test src/lib/variantStock.test.js src/routes/webhooks.stock.test.js",
     "migrate:tenants": "node scripts/migrate-tenants.js",
     "migrate:customers": "node scripts/migrate-customers.js",

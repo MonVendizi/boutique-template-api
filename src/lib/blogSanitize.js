@@ -182,3 +182,75 @@ export function isExternalHref(href) {
   const h = String(href || "").toLowerCase();
   return h.startsWith("http://") || h.startsWith("https://");
 }
+
+/**
+ * Découpe un texte en segments texte / liens markdown sûrs
+ * (même logique que boutique-template/src/lib/blogRichText.tsx).
+ * @param {string} text
+ * @returns {Array<{type:'text',value:string}|{type:'link',label:string,href:string,external:boolean}>}
+ */
+export function parseBlogTextParts(text) {
+  const src = String(text || "");
+  if (!src) return [];
+  const parts = [];
+  let i = 0;
+  while (i < src.length) {
+    const open = src.indexOf("[", i);
+    if (open === -1) {
+      parts.push({ type: "text", value: src.slice(i) });
+      break;
+    }
+    const mid = src.indexOf("](", open + 1);
+    if (mid === -1) {
+      parts.push({ type: "text", value: src.slice(i) });
+      break;
+    }
+    const label = src.slice(open + 1, mid);
+    if (label.includes("[") || label.includes("]")) {
+      parts.push({ type: "text", value: src.slice(i, open + 1) });
+      i = open + 1;
+      continue;
+    }
+    let depth = 1;
+    let j = mid + 2;
+    while (j < src.length && depth > 0) {
+      const ch = src[j];
+      if (ch === "(") depth += 1;
+      else if (ch === ")") depth -= 1;
+      j += 1;
+    }
+    if (depth !== 0) {
+      parts.push({ type: "text", value: src.slice(i, open + 1) });
+      i = open + 1;
+      continue;
+    }
+    if (open > i) {
+      parts.push({ type: "text", value: src.slice(i, open) });
+    }
+    const rawHref = src.slice(mid + 2, j - 1);
+    const href = sanitizeHref(rawHref);
+    if (href) {
+      parts.push({
+        type: "link",
+        label,
+        href,
+        external: isExternalHref(href),
+      });
+    } else {
+      parts.push({ type: "text", value: label });
+    }
+    i = j;
+  }
+  return parts;
+}
+
+/** Extrait les liens markdown sûrs d’un texte (via replaceMarkdownLinks). */
+export function extractMarkdownLinks(text) {
+  const links = [];
+  replaceMarkdownLinks(String(text || ""), (label, href) => {
+    const safe = sanitizeHref(href);
+    if (safe) links.push({ label: String(label), href: safe });
+    return `[${label}](${href})`;
+  });
+  return links;
+}

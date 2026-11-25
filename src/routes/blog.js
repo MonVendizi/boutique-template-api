@@ -1,8 +1,32 @@
 import pool from "../db/pool.js";
 import { checkAdmin, resolveValidAdminPassword } from "../lib/adminAuth.js";
 import { notifyIndexNow } from "../lib/indexnow.js";
+import {
+  sanitizeBlogFaq,
+  sanitizeBlogSections,
+  sanitizeBlogText,
+  sanitizeHref,
+} from "../lib/blogSanitize.js";
+
+/** Nettoyage à la lecture (pas de mutation DB) — défense en profondeur. */
+function sanitizeStoredPost(row) {
+  if (!row || typeof row !== "object") return row;
+  const ctaRaw = row.cta_url != null ? String(row.cta_url).trim() : "";
+  const ctaSafe = ctaRaw ? sanitizeHref(ctaRaw) : null;
+  return {
+    ...row,
+    excerpt: sanitizeBlogText(row.excerpt ?? ""),
+    sections: sanitizeBlogSections(
+      Array.isArray(row.sections) ? row.sections : [],
+    ),
+    faq: sanitizeBlogFaq(Array.isArray(row.faq) ? row.faq : []),
+    cta_url: ctaSafe || "",
+  };
+}
 
 function normalizePost(body = {}) {
+  const ctaRaw = body.cta_url != null ? String(body.cta_url).trim() : "";
+  const ctaSafe = ctaRaw ? sanitizeHref(ctaRaw) : null;
   return {
     slug: String(body.slug || "").trim(),
     type: body.type === "narrative" ? "narrative" : "guide",
@@ -10,7 +34,7 @@ function normalizePost(body = {}) {
       ? body.status
       : "draft",
     title: String(body.title || "").trim(),
-    excerpt: body.excerpt != null ? String(body.excerpt) : "",
+    excerpt: sanitizeBlogText(body.excerpt != null ? body.excerpt : ""),
     hero_image: body.hero_image != null ? String(body.hero_image) : "",
     category: body.category != null ? String(body.category) : "",
     tags: Array.isArray(body.tags) ? body.tags : [],
@@ -18,18 +42,12 @@ function normalizePost(body = {}) {
     seo_description:
       body.seo_description != null ? String(body.seo_description) : "",
     seo_keywords: Array.isArray(body.seo_keywords) ? body.seo_keywords : [],
-    sections: Array.isArray(body.sections) ? body.sections : [],
-    faq: Array.isArray(body.faq)
-      ? body.faq
-          .map((item) => ({
-            question: String(item?.question || "").trim(),
-            answer: String(item?.answer || "").trim(),
-          }))
-          .filter((item) => item.question || item.answer)
-          .slice(0, 6)
-      : [],
+    sections: sanitizeBlogSections(
+      Array.isArray(body.sections) ? body.sections : [],
+    ),
+    faq: sanitizeBlogFaq(Array.isArray(body.faq) ? body.faq : []),
     cta_text: body.cta_text != null ? String(body.cta_text) : "",
-    cta_url: body.cta_url != null ? String(body.cta_url) : "",
+    cta_url: ctaSafe || "",
     related_slug: body.related_slug
       ? String(body.related_slug).trim()
       : null,
@@ -72,7 +90,7 @@ export default async function blogRoutes(fastify) {
     if (!rows.length) {
       return reply.code(404).send({ error: "Article introuvable" });
     }
-    return rows[0];
+    return sanitizeStoredPost(rows[0]);
   });
 
   // ─── Admin ───
